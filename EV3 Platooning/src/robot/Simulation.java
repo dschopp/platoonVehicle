@@ -15,10 +15,6 @@ public class Simulation {
 	public static void main(String[] args) {
 		Settings settings = new Settings_2();
 		Robot robot = new Robot(settings);
-		robot.calibrateLightSensor();
-		// robot.enableCommunication(settings);
-		robot.driveOnHighway();
-
 	}
 
 }

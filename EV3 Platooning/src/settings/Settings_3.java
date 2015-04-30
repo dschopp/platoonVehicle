@@ -3,15 +3,15 @@ package settings;
 /**settings for robot 3 */
 public class Settings_3 extends Settings{
 	private String name = "3";
-	private boolean isLead = false;
+	private boolean isLead = true;
 	private float kp = 2.3F;
 	private float ki = 0.5F;
 	private float kd = 0.4F;
 	private boolean shallExit = false;
 	private float gapSize = 0.15F;
-	private boolean hasTwoColorSensors = false;
-	private float velocity = 50F;
-	private String server_ip = "192.168.1.5";
+	private boolean hasTwoColorSensors = true;
+	private float velocity = 70F;
+	private String server_ip = "192.168.1.4";
 	private int server_port = 5000;
 	
 	@Override

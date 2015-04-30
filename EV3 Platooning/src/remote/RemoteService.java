@@ -7,6 +7,9 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
+import settings.Commands;
+import settings.Position;
+
 /**
  * a single service for one robot. the actual communication is done here.
  * 
@@ -24,6 +27,8 @@ public class RemoteService extends Thread {
 
 	/** indicates whether a command shall be sent at the moment or not */
 	private boolean hasToSend;
+	
+	private String robotPosition = "not on highway";
 
 	public RemoteService(int port) {
 		try {
@@ -52,18 +57,34 @@ public class RemoteService extends Thread {
 			BufferedReader in = new BufferedReader(new InputStreamReader(
 					clientSocket.getInputStream()));
 
+			String position;
 			while (!isInterrupted()) {
 
 				// send command if necessary
 				if (hasToSend) {
+					System.out.println("Command sent to Robot: " + command);
 					out.println(command);
 					hasToSend = false;
 				}
-				Thread.sleep(100);
+				else{
+					out.println();
+				}
+				
+				//print position update if sent
+				position = in.readLine();
+				if(!position.isEmpty()){
+					//System.out.println("Service " + position);
+					robotPosition = position;
+				}
+				Thread.sleep(50);
 			}
 		} catch (IOException | InterruptedException e) {
 			e.printStackTrace();
 		}
+	}
+
+	public String getRobotPosition() {
+		return this.robotPosition;
 	}
 
 }

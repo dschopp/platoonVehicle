@@ -103,9 +103,22 @@ public class RemoteUI extends JFrame {
 		
 	}
 	
-	private void refreshRobotText(){
+	protected void refreshRobotText(){
 		//TODO: display whole text(IP, #persons etc)
-		informationText.setText("Name: " + robotBox.getSelectedItem());
+		if(robotBox.getSelectedItem() != null){
+		StringBuilder text = new StringBuilder("Name: ");
+		text.append(robotBox.getSelectedItem());
+		text.append("\n");
+		text.append("Position: ");
+
+			text.append(remote.getRobotPosition(robotBox.getSelectedItem().toString()));
+		
+		informationText.setText(text.toString());
+		}
+		else{
+			informationText.setText("Robot information will be displayed here");
+		}
+		
 	}
 	
 	/** a new robot is added to the combo box */

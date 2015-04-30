@@ -1,5 +1,9 @@
 package robot;
 
+import java.util.Date;
+
+import settings.Lane;
+import settings.Position;
 import settings.Settings;
 import settings.Settings_1;
 import settings.Settings_2;
@@ -8,7 +12,6 @@ import lejos.hardware.Button;
 import lejos.hardware.Key;
 import lejos.hardware.KeyListener;
 import lejos.hardware.lcd.LCD;
-import lejos.hardware.motor.EV3LargeRegulatedMotor;
 import lejos.hardware.motor.UnregulatedMotor;
 import lejos.hardware.port.MotorPort;
 import lejos.hardware.port.SensorPort;
@@ -17,10 +20,9 @@ import lejos.hardware.sensor.EV3UltrasonicSensor;
 import lejos.hardware.sensor.SensorMode;
 import lejos.robotics.Color;
 import lejos.robotics.SampleProvider;
-import lejos.utility.Delay;
 
 /** class representing the robot and all its capabilities */
-public class Robot {
+public class Robot implements PlatooningVehicle {
 
 	/**
 	 * Enum used to indicate which line to follow REGULAR normal right lane EXIT
@@ -29,10 +31,6 @@ public class Robot {
 	 */
 	private enum LineFollowingMode {
 		REGULAR, EXIT, DONT_EXIT, OVERTAKE;
-	}
-
-	private enum LowDistanceReaction {
-		KEEP_DISTANCE, OVERTAKE;
 	}
 
 	/** the two motors of the EV3 */
@@ -62,13 +60,7 @@ public class Robot {
 	private float gapSize;
 
 	/** indicates whether the robot shall terminate as soon as possible */
-	private boolean shallStop = false;
-
-	/**
-	 * indicates whether the robot is currently overtaking (driving on the left
-	 * lane)
-	 */
-	private boolean isOvertaking = false;
+	private boolean shallStop = true;
 
 	/** indicates whether the robot shall change the current line */
 	private boolean shallChangeLine = false;
@@ -89,32 +81,37 @@ public class Robot {
 	private float kp;
 	private float kd;
 
-
+	/** indicates whether the robot has two color sensors or just one */
 	private boolean hasTwoColorSensors;
+	
+	/**the robots velocity */
 	private float velocity;
 	
+	/** IP and port of the infrastructure unit */
 	private String server_ip;
 	private int server_port;
 	
-	private RobotCommunication communication;
+	/** communication modules for V2I and V2V communication */
+	private V2ICommunicationModule v2icommunication;
+	private V2VCommunicationModule v2vcommunication;
+	
+	/** the settings instance which is used for the robot */
 	private Settings settings;
+	
+	/**indicates whether the robot shall leave the current platoon */
 	private boolean shallLeavePlatoon;
+	
+	/**the number of green markers on the floor that the robot passed */
 	private int markerCount = 0;
-	private int distanceLeft;
-	private int distanceRight;
-
-	/**
-	public void testSpeed(int speed){
-		while(!closeToWall()){
-			motorLeftTest.setPower(speed);
-			motorRightTest.setPower(speed);
-			motorLeftTest.forward();
-			motorRightTest.forward();	
-		}
-		motorLeftTest.stop();
-		motorRightTest.stop();
-	}
-	*/
+	
+	/** the current position of the robot */
+	private Position currentPosition = new Position();
+	
+	/** the current highway lane. default is right */
+	private Lane currentLane = Lane.RIGHT;
+	
+	/** indicates whether the robot shall terminate as fast as possible */
+	private boolean shallTerminate = false;
 
 	/**
 	 * constructor
@@ -128,10 +125,28 @@ public class Robot {
 		if (hasTwoColorSensors) {
 			colorSensorLeft = new EV3ColorSensor(SensorPort.S2);
 		}
-		Button.ESCAPE.addKeyListener(new StopButtonListener());
-		Button.UP.addKeyListener(new OvertakeListener());
-		Button.DOWN.addKeyListener(new TestListener());
+		Button.ESCAPE.addKeyListener(new TerminateButtonListener());
+		calibrateLightSensor();
+		enableCommunication();
+		LCD.clear();
+		LCD.drawString("test", 0, 0);
+		while(!shallTerminate){
+			driveOnHighway();
+		}
 		
+	}
+	
+	public synchronized Position getPosition(){
+		return this.currentPosition;
+	}
+	
+	public synchronized void setPosition(int markerNumber, double additionalDistance){
+		currentPosition.setMarkerNumber(markerNumber);
+		currentPosition.setAdditionalDistance(additionalDistance);
+	}
+	
+	public String getName(){
+		return this.settings.getName();
 	}
 	
 	public void setShallChangeLine(boolean shallChangeLine){
@@ -150,14 +165,23 @@ public class Robot {
 
 	}
 	
-	public void enableCommunication(Settings settings){
+	private void enableCommunication(){
 		server_ip = settings.getServerIP();
 		server_port = settings.getServerPort();
-		
-		communication = new RobotCommunication(this, server_ip, server_port);
-		communication.start();
-		
+		enableV2ICommunication(server_ip, server_port);
 	}
+	
+	private void enableV2VCommunication(String platoonIP){
+		v2vcommunication = new V2VCommunicationModule(this, platoonIP);
+		v2vcommunication.startCommunication();
+	}
+	
+	private void enableV2ICommunication(String ip, int port){
+		v2icommunication = new V2ICommunicationModule(this, server_ip, server_port);
+		v2icommunication.start();
+	}
+	
+	
 
 	/**
 	 * calibrates the light sensor to follow the lines. is needed to cope with
@@ -225,33 +249,31 @@ public class Robot {
 			}
 			if (shallChangeLine) {
 				changeLine();
-				LCD.clear();
-				LCD.drawString(Integer.toString(motorLeft.getTachoCount()), 0, 0);
 			}
 			if(shallLeavePlatoon){
 				leavePlatoon();
 			}
 
-//			if (isLead) {
-//				distanceMode.fetchSample(distanceSample, 0);
-//				if (distanceSample[0] < 0.25) {
-//					changeLine();
-//				}
-//			}
-
-			switch (currentColor) {
-			case Color.YELLOW:
-				if(distanceLeft > 100 && distanceRight > 100){
-					motorLeft.resetTachoCount();
-					motorRight.resetTachoCount();
-					markerCount++;
+			//brake if an obstacle is detected
+			if (isLead) {
+				distanceMode.fetchSample(distanceSample, 0);
+				if (distanceSample[0] < 0.15) {
+					velocity = 0;
 				}
-				
-			case Color.GREEN:		
-				distanceLeft = motorLeft.getTachoCount();
-				distanceRight = motorRight.getTachoCount();
+				else{
+					velocity = settings.getVelocity();
+				}
+			}
+			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
+			switch (currentColor) {
+			case Color.YELLOW:			
+			case Color.GREEN:			
 			case Color.NONE:
 			case Color.BLUE:
+				if(currentPosition.getAdditionalDistance() >  7){
+					setPosition(++markerCount, 0);
+					motorLeft.resetTachoCount();
+				}
 			case Color.BLACK:
 				lineFollowingMode = LineFollowingMode.REGULAR;
 				followLine(redMode, redSample);
@@ -275,65 +297,122 @@ public class Robot {
 				shallExit = false;
 				break;
 			}
+			//refresh current position
+			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
+			LCD.clear();
+			LCD.drawString(Double.toString(currentPosition.getAdditionalDistance()), 0, 0);
 
 		}
 		motorLeft.stop();
 		motorRight.stop();
+
 	}
 
-	/** the robot leaves the platoon by reducing its speed until a gap size of 50 cm */
-	private void leavePlatoon() {
-		velocity = velocity - 20;
-		isLead = false;
-		
-		SampleProvider distanceMode = usSensor.getDistanceMode();
-		float[] distanceSample = new float[distanceMode.sampleSize()];
-		
-		SensorMode redMode = colorSensorRight.getRedMode();
-		float[] redSample = new float[redMode.sampleSize()];
-		
-		float distance = 0;
-		while(distance < 1){
-			followLine(redMode, redSample);
-			distanceMode.fetchSample(distanceSample, 0);
-			distance = distanceSample[0];
-		}
-		velocity = velocity + 20;
-		shallLeavePlatoon = false;
-		isLead = true;
-		
-	}
+//	/** the robot leaves the platoon by reducing its speed until a gap size of 50 cm */
+//	private void leavePlatoon() {
+//		velocity = velocity - 20;
+//		isLead = false;
+//		
+//		SampleProvider distanceMode = usSensor.getDistanceMode();
+//		float[] distanceSample = new float[distanceMode.sampleSize()];
+//		
+//		SensorMode redMode = colorSensorRight.getRedMode();
+//		float[] redSample = new float[redMode.sampleSize()];
+//		
+//		float distance = 0;
+//		while(distance < 1){
+//			followLine(redMode, redSample);
+//			distanceMode.fetchSample(distanceSample, 0);
+//			distance = distanceSample[0];
+//		}
+//		velocity = velocity + 20;
+//		shallLeavePlatoon = false;
+//		isLead = true;
+//		
+//	}
 
 	/** the robot changes the current highway lane */
 	private void changeLine() {
-		SensorMode colorMode = colorSensorRight.getRedMode();
+		SensorMode redMode = colorSensorRight.getRedMode();
+		float[] redSample = new float[redMode.sampleSize()];
+		SensorMode colorMode = colorSensorLeft.getColorIDMode();
 		float[] colorSample = new float[colorMode.sampleSize()];
-		colorSample[0] = 100;
-		if (!isOvertaking) {
+		redSample[0] = 100;
+		int currentColor;
+		if (currentLane == Lane.RIGHT) {
 			motorLeft.setPower(20);
 			motorRight.setPower(70);
 			motorLeft.forward();
 			motorRight.forward();
-			Delay.msDelay(300);
-			motorLeft.setPower(70);
-			while (colorSample[0] > defaultRightColor + 0.1
-					|| colorSample[0] < defaultRightColor - 0.1) {
+			long startManeuver = new Date().getTime();
+			int i = 0;
+			while(new Date().getTime() < startManeuver + 300){
 				colorMode.fetchSample(colorSample, 0);
+				currentColor = (int) colorSample[0];
+				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
+				if(currentColor == Color.BLUE){
+					if(currentPosition.getAdditionalDistance() >  7){
+						currentPosition.setMarkerNumber(++markerCount);
+						currentPosition.setAdditionalDistance(0);
+						motorLeft.resetTachoCount();
+					}
+				}
+				LCD.clear();
+				LCD.drawString(Integer.toString(++i), 0, 0);
 			}
-			isOvertaking = true;
+			motorLeft.setPower((int) settings.getVelocity());
+			motorRight.setPower((int) settings.getVelocity());
+			while (redSample[0] > defaultRightColor + 0.1
+					|| redSample[0] < defaultRightColor - 0.1) {
+				redMode.fetchSample(redSample, 0);
+				colorMode.fetchSample(colorSample, 0);
+				currentColor = (int) colorSample[0];
+				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
+				if(currentColor == Color.BLUE){
+					if(currentPosition.getAdditionalDistance() >  7){
+						currentPosition.setMarkerNumber(++markerCount);
+						currentPosition.setAdditionalDistance(0);
+						motorLeft.resetTachoCount();
+					}
+				}
+			}
+			currentLane = Lane.OVERTAKING;
 			velocity = settings.getVelocity() + 20;
 		} else {
 			motorRight.setPower(20);
 			motorLeft.setPower(70);
 			motorLeft.forward();
 			motorRight.forward();
-			Delay.msDelay(300);
-			motorRight.setPower(70);
-			while (colorSample[0] > defaultRightColor + 0.1
-					|| colorSample[0] < defaultRightColor - 0.1) {
+			long startManeuver = new Date().getTime();
+			while(new Date().getTime() < startManeuver + 300){
 				colorMode.fetchSample(colorSample, 0);
+				currentColor = (int) colorSample[0];
+				currentPosition.setAdditionalDistance(motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
+				if(currentColor == Color.BLUE){
+					if(currentPosition.getAdditionalDistance() >  7){
+						currentPosition.setMarkerNumber(++markerCount);
+						currentPosition.setAdditionalDistance(0);
+						motorLeft.resetTachoCount();
+					}
+				}
 			}
-			isOvertaking = false;
+			motorLeft.setPower((int) settings.getVelocity());
+			motorRight.setPower((int) settings.getVelocity());
+			while (redSample[0] > defaultRightColor + 0.1
+					|| redSample[0] < defaultRightColor - 0.1) {
+				redMode.fetchSample(redSample, 0);
+				colorMode.fetchSample(colorSample, 0);
+				currentColor = (int) colorSample[0];
+				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
+				if(currentColor == Color.BLUE){
+					if(currentPosition.getAdditionalDistance() >  7){
+						currentPosition.setMarkerNumber(++markerCount);
+						currentPosition.setAdditionalDistance(0);
+						motorLeft.resetTachoCount();
+					}
+				}
+			}
+			currentLane = Lane.RIGHT;
 			velocity = settings.getVelocity();
 		}
 		shallChangeLine = false;
@@ -366,7 +445,7 @@ public class Robot {
 			longitudinalCorrection = calculateLongitudinalCorrection(
 					distanceSample[0], gapSize);
 		}
-		if (isOvertaking) {
+		if (currentLane == Lane.OVERTAKING) {
 			lateralCorrection = -lateralCorrection;
 		}
 		int powerLeft = (int) (velocity + errorMultiplicator * velocity * lateralCorrection - longitudinalCorrection);
@@ -432,10 +511,10 @@ public class Robot {
 	}
 
 	/** listener used to stop the robot if ESCAPE button is pressed */
-	class StopButtonListener implements KeyListener {
+	class TerminateButtonListener implements KeyListener {
 		@Override
 		public void keyPressed(Key k) {
-			shallStop = true;
+			shallTerminate = true;
 		}
 
 		@Override
@@ -445,41 +524,6 @@ public class Robot {
 		}
 	}
 
-	/** listener used to change lines if UP button is pressed */
-	class OvertakeListener implements KeyListener {
-		@Override
-		public void keyPressed(Key k) {
-			shallChangeLine = true;
-		}
-
-		@Override
-		public void keyReleased(Key k) {
-			// Do nothing
-
-		}
-	}
-	
-	/** listener used to change lines if UP button is pressed */
-	class TestListener implements KeyListener {
-		@Override
-		public void keyPressed(Key k) {
-			LCD.clear();
-			LCD.drawString(Integer.toString(distanceLeft), 0, 0);
-			LCD.drawString(Integer.toString(distanceRight), 0, 1);
-			LCD.drawString(Integer.toString(markerCount), 0, 2);
-		}
-
-		@Override
-		public void keyReleased(Key k) {
-			// Do nothing
-
-		}
-	}
-
-	public void setShallExit(boolean shallExit) {
-		this.shallExit = shallExit;
-		
-	}
 
 	public void clearDisplay() {
 		LCD.clear();
@@ -490,18 +534,70 @@ public class Robot {
 		return settings.getName();
 	}
 
-	public void setShallStop(boolean shallStop) {
-		this.shallStop = true;
+	@Override
+	public void setVelocity(int velocity) {
+		this.velocity = velocity;
 		
 	}
 
-	public void setIsLead(boolean isLead) {
-		this.isLead = isLead;
+	@Override
+	public void changeLine(Lane lane) {
+		if(lane != currentLane){
+			this.shallChangeLine = true;
+		}
 		
 	}
 
-	public void setShallLeavePlatoon(boolean shallLeavePlatoon) {
-		this.shallLeavePlatoon = shallLeavePlatoon;
+	@Override
+	public void joinPlatoon(String platoonIP) {
+		this.isLead = false;
+		enableV2VCommunication(platoonIP);
+		
+	}
+
+	@Override
+	public void leavePlatoon() {
+		// TODO What is the desired scenario?
+		
+	}
+
+	@Override
+	public void startDriving() {
+		shallStop = false;
+		
+	}
+
+	@Override
+	public void stopDriving() {
+		shallStop = true;
+		
+	}
+
+	@Override
+	public void exitNextRamp() {
+		shallExit = true;
+		
+	}
+
+	@Override
+	public void setGapSize(float gapSize) {
+		this.gapSize = gapSize;
+		
+	}
+	
+	@Override
+	public boolean sendMessageToPlatoon(String message){
+		if(v2vcommunication == null ){
+			return false;
+		}
+		else{
+			v2vcommunication.sendMessage(message);
+			return true;
+		}	
+	}
+
+	public void closeV2VCommunication() {
+		v2vcommunication.close();
 		
 	}
 

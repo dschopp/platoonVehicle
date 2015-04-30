@@ -4,14 +4,14 @@ package settings;
 public class Settings_1 extends Settings{
 	private String name = "1";
 	private boolean isLead = true;
-	private float kp = 0.4F;
-	private float ki = 0.1F;
+	private float kp = 2F;
+	private float ki = 0F;
 	private float kd = 0F;
 	private boolean shallExit = false;
 	private float gapSize = 0.15F;
 	private boolean hasTwoColorSensors = false;
-	private float velocity = 500F;
-	private String server_ip = "192.168.1.5";
+	private float velocity = 50F;
+	private String server_ip = "192.168.1.3";
 	private int server_port = 5000;
 	
 	@Override
