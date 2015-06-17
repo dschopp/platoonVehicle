@@ -9,9 +9,9 @@ public class Settings_1 extends Settings{
 	private float kd = 0F;
 	private boolean shallExit = false;
 	private float gapSize = 0.15F;
-	private boolean hasTwoColorSensors = false;
+	private boolean hasTwoColorSensors = true;
 	private float velocity = 50F;
-	private String server_ip = "192.168.1.3";
+	private String server_ip = "192.168.1.5";
 	private int server_port = 5000;
 	
 	@Override

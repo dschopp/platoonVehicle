@@ -1,167 +1,142 @@
 package robot;
 
-import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
-import java.net.NetworkInterface;
-import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.List;
+import org.jgroups.JChannel;
+import org.jgroups.Message;
+import org.jgroups.Message.Flag;
+import org.jgroups.ReceiverAdapter;
+import org.jgroups.View;
 
-import lejos.hardware.lcd.LCD;
 
-/** class using multicasts to transmit messages to all platoon members */
-public class V2VCommunicationModule {
+/** Module used to multicast messages to all platoon members. 
+ * 
+ * @author Martin
+ *
+ */
+public class V2VCommunicationModule extends ReceiverAdapter {
 
-	/** the corresponding robot */
+	/** The corresponding robot */
+	@SuppressWarnings("unused")
 	private Robot robot;
 
-	/** the socket for communication */
-	private MulticastSocket v2vSocket;
+	/** Indicates whether the module should currently transmit a message */
+	private boolean hasToSend = false;
 
-	/** indicates whether the module shoud currently transmit a message */
-	private boolean hasToSend;
-
-	/** string containing the message which should be sent */
+	/** String containing the message which should be sent */
 	private String message;
 
-	/** the port which is used for V2V communication. default: 6000 */
-	private final int clientPort = 6000;
-
-	/** the client thread */
-	private V2VClient client;
-
-	/** the server thread */
+	/** The server thread */
 	private V2VServer server;
-
-	/** the address of the multicast group of the platoon */
-	private InetAddress platoonAddress;
-
-	/** the robots active IP address(es) (except localhost) */
-	private List<InetAddress> robotAddress = new ArrayList<InetAddress>();
-
-	protected V2VCommunicationModule(Robot robot, String platoonAddress) {
-		try {
-
-			// initialization
-			this.robot = robot;
-			client = new V2VClient();
-			server = new V2VServer();
-			v2vSocket = new MulticastSocket(clientPort);
-
-			// join the platoons multicast group
-			this.platoonAddress = InetAddress.getByName(platoonAddress);
-			v2vSocket.joinGroup(this.platoonAddress);
-
-			// get robot ip address
-			Enumeration<NetworkInterface> interfaces = NetworkInterface
-					.getNetworkInterfaces();
-			while (interfaces.hasMoreElements()) {
-				NetworkInterface iface = interfaces.nextElement();
-				// filter localhost and inactive interfaces
-				if (iface.isLoopback() || !iface.isUp())
-					continue;
-				Enumeration<InetAddress> addresses = iface.getInetAddresses();
-				while (addresses.hasMoreElements()) {
-					robotAddress.add(addresses.nextElement());
-				}
-			}
-		} catch (IOException e) {
-			LCD.clear();
-			LCD.drawString(e.getMessage(), 0, 0);
-			try {
-				Thread.sleep(5000);
-			} catch (InterruptedException e1) {
-				e1.printStackTrace();
-			}
-		}
-	}
-
-	/**
-	 * the client thread which is used to receive messages (implemented as a
-	 * thread
+	
+	/** The channel used for V2V communication.
+	 * One Channel per platoon.
 	 */
-	private class V2VClient extends Thread {
-		public void run() {
-			DatagramPacket packet = new DatagramPacket(new byte[1024], 1024);
-
-			// try to receive messages constantly
-			while (!isInterrupted()) {
-				try {
-					v2vSocket.receive(packet);
-					byte[] data = packet.getData();
-					if (!robotAddress.contains(packet.getAddress())) {
-						// TODO handle message
-						// enter code here
-					}
-					Thread.sleep(50);
-				} catch (IOException | InterruptedException e) {
-					LCD.clear();
-					LCD.drawString(e.getMessage(), 0, 0);
-					try {
-						Thread.sleep(5000);
-					} catch (InterruptedException e1) {
-						e1.printStackTrace();
-					}
-				}
-
-			}
-
-		}
-	}
+	private JChannel communicationChannel;
+	
+	/**Indicates whether the current message should be transmitted out of band or not.
+	 * True, if the message should be delivered without concerning ordering.
+	 * Used for time critical messages such as emergency notifications.
+	 */
+	private boolean isOOB;
 
 	/**
-	 * the server thread which is used to multicast messages (implemented as a
-	 * thread
+	 * Standard constructor
+	 * @param robot The robot which corresponds to this module.
+	 * @param platoonName The name of the platoon which shall be joined.
+	 */
+	protected V2VCommunicationModule(Robot robot){
+		
+			// Initialization
+			this.robot = robot;
+			server = new V2VServer();
+			
+			// The used JGroup configuration file
+			String config = "udp_No" + robot.getName() + ".xml";
+			try {
+				communicationChannel = new JChannel(config);
+				communicationChannel.setReceiver(this);
+
+				//Discard own messages
+				communicationChannel.setDiscardOwnMessages(true);
+				System.out.println("V2V Communication configured");
+			} catch (Exception e) {
+				System.err.println("V2V communication configuration failed!");
+				e.printStackTrace();
+			}
+	}
+
+
+	/**
+	 * The inner server class which sends messages
+	 * @author Martin
+	 *
 	 */
 	private class V2VServer extends Thread {
 		public void run() {
-			try {
-
-				// if a message has to be sent: send it
+			while (!isInterrupted()) {
+				
+				//If a message needs to be sent
 				if (hasToSend) {
-					DatagramPacket packet = new DatagramPacket(
-							message.getBytes(), message.getBytes().length,
-							platoonAddress, clientPort);
-					v2vSocket.send(packet);
-				}
-				Thread.sleep(10);
-			} catch (IOException | InterruptedException e) {
-				LCD.clear();
-				LCD.drawString(e.getMessage(), 0, 0);
-				try {
-					Thread.sleep(5000);
-				} catch (InterruptedException e1) {
-					e1.printStackTrace();
+					Message newMessage = new Message(null, null, message);
+					
+					//If this message shall be transmitted out of band
+					if(isOOB){
+						newMessage.setFlag(Flag.OOB);
+					}
+					try {
+						
+						//Send message
+						communicationChannel.send(newMessage);
+						System.out.println("Sent message: " + message);
+						hasToSend = false;
+					} catch (Exception e) {
+						System.err.println("Failed to send message!");
+						e.printStackTrace();
+					}
 				}
 			}
 		}
-	}
 
-	/** start V2V communication */
-	public void startCommunication() {
-		server.start();
-		client.start();
 	}
-
-	protected void setHasToSend(boolean hasToSend) {
-		this.hasToSend = hasToSend;
-	}
-
-	protected void sendMessage(String message) {
+	
+	protected void sendMessage(String message, boolean isOOB) {
 		hasToSend = true;
+		this.isOOB = isOOB;
 		this.message = message;
 	}
+	
+	public void viewAccepted(View new_view) {
+	    System.out.println("Node joined, current group view: " + new_view);
+	}
 
-	protected void setMessage(String message) {
-		this.message = message;
+	public void receive(Message msg) {
+		System.out.println("Received message: " + msg.getObject());
+		
+		//in case of emergency--> brake
+		if(msg.getObject().toString().contains("EMERGENCY")){
+			robot.stopDriving();
+		}
 	}
 
 	/** terminate V2V communication (used for platoon leaving) */
 	public void close() {
-		client.interrupt();
+		System.out.println("V2V module closed.");
 		server.interrupt();
+	}
+	
+	public void joinGroup(String groupName){
+		try {
+			communicationChannel.connect(groupName);
+			System.out.println("Connection with Group established.");
+			server.start();
+			System.out.println("V2V communication started");
+		} catch (Exception e) {
+			System.err.println("Connection with Group failed");
+			e.printStackTrace();
+		}
+	}
+
+	public int getPlatoonSize() {
+		return communicationChannel.getView().size();
 	}
 
 }

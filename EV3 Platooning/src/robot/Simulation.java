@@ -1,20 +1,15 @@
 package robot;
 
-import settings.Settings;
-import settings.Settings_1;
-import settings.Settings_2;
-import settings.Settings_3;
-
 /**
- * main class where robot is managed
- * @author Martin 
- * 
+ * Application startup. Passes needed parameters to the robot.
+ * @author Martin
+ *
  */
 public class Simulation {
 
 	public static void main(String[] args) {
-		Settings settings = new Settings_2();
-		Robot robot = new Robot(settings);
+		String[] arguments = {"-Djava.net.preferIPv4Stack=true", "-Djgroups.bind_addr=192.168.1.5"};
+		Robot.main(arguments);
 	}
 
 }

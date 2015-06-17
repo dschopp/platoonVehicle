@@ -20,6 +20,7 @@ import lejos.hardware.sensor.EV3UltrasonicSensor;
 import lejos.hardware.sensor.SensorMode;
 import lejos.robotics.Color;
 import lejos.robotics.SampleProvider;
+import lejos.utility.Delay;
 
 /** class representing the robot and all its capabilities */
 public class Robot implements PlatooningVehicle {
@@ -34,8 +35,6 @@ public class Robot implements PlatooningVehicle {
 	}
 
 	/** the two motors of the EV3 */
-	//private EV3LargeRegulatedMotor motorLeft = new EV3LargeRegulatedMotor(MotorPort.B);
-	//private EV3LargeRegulatedMotor motorRight = new EV3LargeRegulatedMotor(MotorPort.C);
 	private UnregulatedMotor motorRight = new UnregulatedMotor(MotorPort.C);
 	private UnregulatedMotor motorLeft = new UnregulatedMotor(MotorPort.B);
 
@@ -49,6 +48,9 @@ public class Robot implements PlatooningVehicle {
 
 	/** indicates whether the robot is lead vehicle of a platoon */
 	private boolean isLead;
+	
+	/** Indicates whether the robot is part of a platoon */
+	private boolean isInPlatoon = false;
 
 	/** the current LineFollowingMode */
 	private LineFollowingMode lineFollowingMode = LineFollowingMode.REGULAR;
@@ -112,6 +114,8 @@ public class Robot implements PlatooningVehicle {
 	
 	/** indicates whether the robot shall terminate as fast as possible */
 	private boolean shallTerminate = false;
+	
+	private boolean emergencyNotificationSent = false;
 
 	/**
 	 * constructor
@@ -127,9 +131,10 @@ public class Robot implements PlatooningVehicle {
 		}
 		Button.ESCAPE.addKeyListener(new TerminateButtonListener());
 		calibrateLightSensor();
+
+		
 		enableCommunication();
-		LCD.clear();
-		LCD.drawString("test", 0, 0);
+		
 		while(!shallTerminate){
 			driveOnHighway();
 		}
@@ -168,12 +173,16 @@ public class Robot implements PlatooningVehicle {
 	private void enableCommunication(){
 		server_ip = settings.getServerIP();
 		server_port = settings.getServerPort();
+		System.out.println("Enable V2I communication...");
 		enableV2ICommunication(server_ip, server_port);
+		System.out.println("V2I communication enabled.");
+		System.out.println("Enable V2V communication...");
+		enableV2VCommunication();
+		System.out.println("V2V communication enabled.");
 	}
 	
-	private void enableV2VCommunication(String platoonIP){
-		v2vcommunication = new V2VCommunicationModule(this, platoonIP);
-		v2vcommunication.startCommunication();
+	private void enableV2VCommunication(){
+		v2vcommunication = new V2VCommunicationModule(this);
 	}
 	
 	private void enableV2ICommunication(String ip, int port){
@@ -188,7 +197,7 @@ public class Robot implements PlatooningVehicle {
 	 * different light conditions etc
 	 */
 	public void calibrateLightSensor() {
-		LCD.drawString("Press the ENTER", 0, 0);
+		LCD.drawString("1. Press the ENTER", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate right", 0, 2);
 		LCD.drawString("road side color!", 0, 3);
@@ -199,7 +208,7 @@ public class Robot implements PlatooningVehicle {
 		defaultRightColor = colorSample[0];
 		LCD.clear();
 
-		LCD.drawString("Now press the ENTER", 0, 0);
+		LCD.drawString("2. Press the ENTER", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate left", 0, 2);
 		LCD.drawString("road side color!", 0, 3);
@@ -208,7 +217,7 @@ public class Robot implements PlatooningVehicle {
 		defaultLeftColor = colorSample[0];
 		LCD.clear();
 
-		LCD.drawString("Press the ENTER ", 0, 0);
+		LCD.drawString("3. Press the ENTER ", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate right", 0, 2);
 		LCD.drawString("exit ramp color!", 0, 3);
@@ -216,6 +225,7 @@ public class Robot implements PlatooningVehicle {
 		colorTestMode.fetchSample(colorSample, 0);
 		exitColor = colorSample[0];
 		LCD.clear();
+		System.out.println("Sensors calibrated");
 
 	}
 	
@@ -259,9 +269,17 @@ public class Robot implements PlatooningVehicle {
 				distanceMode.fetchSample(distanceSample, 0);
 				if (distanceSample[0] < 0.15) {
 					velocity = 0;
+					if(isInPlatoon){
+						//send emergency notification
+						if(!emergencyNotificationSent){
+							v2vcommunication.sendMessage(getName() + ": EMERGENCY BRAKE", true);
+							emergencyNotificationSent = true;
+						}
+					}
 				}
 				else{
 					velocity = settings.getVelocity();
+					emergencyNotificationSent = false;
 				}
 			}
 			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
@@ -280,6 +298,9 @@ public class Robot implements PlatooningVehicle {
 				break;
 			case Color.RED:
 				if (shallExit) {
+					if(isInPlatoon){
+						v2vcommunication.sendMessage(getName() + ": I exit the highway now", false);
+					}
 					lineFollowingMode = LineFollowingMode.EXIT;
 					isLead = true;
 				} else {
@@ -299,8 +320,6 @@ public class Robot implements PlatooningVehicle {
 			}
 			//refresh current position
 			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
-			LCD.clear();
-			LCD.drawString(Double.toString(currentPosition.getAdditionalDistance()), 0, 0);
 
 		}
 		motorLeft.stop();
@@ -333,6 +352,9 @@ public class Robot implements PlatooningVehicle {
 
 	/** the robot changes the current highway lane */
 	private void changeLine() {
+		if(isInPlatoon){
+			v2vcommunication.sendMessage(getName() + ": I change line", false);
+		}
 		SensorMode redMode = colorSensorRight.getRedMode();
 		float[] redSample = new float[redMode.sampleSize()];
 		SensorMode colorMode = colorSensorLeft.getColorIDMode();
@@ -416,6 +438,9 @@ public class Robot implements PlatooningVehicle {
 			velocity = settings.getVelocity();
 		}
 		shallChangeLine = false;
+		if(isInPlatoon){
+			v2vcommunication.sendMessage(getName() + ": I finished changing lines", false);
+		}
 
 	}
 
@@ -537,6 +562,7 @@ public class Robot implements PlatooningVehicle {
 	@Override
 	public void setVelocity(int velocity) {
 		this.velocity = velocity;
+		System.out.println("Velocity set to: " + velocity);
 		
 	}
 
@@ -549,32 +575,54 @@ public class Robot implements PlatooningVehicle {
 	}
 
 	@Override
-	public void joinPlatoon(String platoonIP) {
-		this.isLead = false;
-		enableV2VCommunication(platoonIP);
-		
+	public void joinPlatoon(String platoonName) {
+		v2vcommunication.joinGroup(platoonName);
+		System.out.println("Joined V2V communication of platoon " + platoonName);
+		v2vcommunication.sendMessage(getName() + ": Hello, I'm new!", false);
+		if(v2vcommunication.getPlatoonSize() > 1){
+			isLead = false;
+		}
+		else{
+			isLead = true;
+		}	
+		isInPlatoon = true;
 	}
 
 	@Override
 	public void leavePlatoon() {
 		// TODO What is the desired scenario?
-		
+		if(isInPlatoon){
+			v2vcommunication.sendMessage(getName() + ": I leave the platoon", false);
+			isInPlatoon = false;
+			velocity = 50;
+			System.out.println("Left the platoon.");
+		}
 	}
 
 	@Override
 	public void startDriving() {
 		shallStop = false;
+		System.out.println("Started driving");
 		
 	}
 
 	@Override
 	public void stopDriving() {
+		if(isInPlatoon){
+			v2vcommunication.sendMessage(getName() + ": I have to stop", false);
+		}
+		motorLeft.setPower(0);
+		motorRight.setPower(0);
 		shallStop = true;
+		System.out.println("Stopped driving");
 		
 	}
 
 	@Override
 	public void exitNextRamp() {
+		if(isInPlatoon){
+			v2vcommunication.sendMessage(getName() + ": I will exit next ramp", false);
+		}
 		shallExit = true;
 		
 	}
@@ -582,16 +630,17 @@ public class Robot implements PlatooningVehicle {
 	@Override
 	public void setGapSize(float gapSize) {
 		this.gapSize = gapSize;
+		System.out.println("Gap size set to " + gapSize);
 		
 	}
 	
 	@Override
-	public boolean sendMessageToPlatoon(String message){
+	public boolean sendMessageToPlatoon(String message, boolean isOOB){
 		if(v2vcommunication == null ){
 			return false;
 		}
 		else{
-			v2vcommunication.sendMessage(message);
+			v2vcommunication.sendMessage(message, isOOB);
 			return true;
 		}	
 	}
@@ -599,6 +648,10 @@ public class Robot implements PlatooningVehicle {
 	public void closeV2VCommunication() {
 		v2vcommunication.close();
 		
+	}
+	
+	public static void main(String[] args){
+		Robot robot = new Robot(new Settings_1());
 	}
 
 }

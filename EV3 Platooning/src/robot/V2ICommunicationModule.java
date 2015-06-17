@@ -94,7 +94,7 @@ public class V2ICommunicationModule extends Thread {
 					robot.startDriving();
 				}
 				else if (command.equals(Commands.JOIN_PLATOON)){
-				//	robot.joinPlatoon(null);
+					robot.joinPlatoon("Mein erstes Platoon");
 				//TODO: change this
 				}
 				else if (command.equals(Commands.LEAVE_PLATOON)){
