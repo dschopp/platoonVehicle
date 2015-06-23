@@ -1,6 +1,6 @@
 package robot;
 
-import settings.Lane;
+import tools.Lane;
 
 /**
  * Interface to access main (driving) features of a vehicle which is capable of

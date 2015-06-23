@@ -13,7 +13,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 
-import settings.Commands;
+import tools.Commands;
 
 /** simple UI used to send commands to the robot
  * 

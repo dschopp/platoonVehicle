@@ -5,117 +5,117 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.net.UnknownHostException;
 import java.util.Date;
 
-import settings.Commands;
-import settings.Lane;
+import tools.Commands;
+import tools.Lane;
 
-/** the class managing the communication between the robot and the roadside infrastructure 
+/**
+ * Module representing the communication between the vehicle and the roadside
+ * infrastructure
  * 
  * @author Martin
  *
  */
 public class V2ICommunicationModule extends Thread {
-	
-	/** the corresponding robot for this module */
-	private Robot robot;
-	
-	/** the socket which is used to communicate */
+
+	/** The corresponding vehicle for this module */
+	private PlatooningVehicle vehicle;
+
+	/** The socket which is used to communicate */
 	private Socket socket;
-	
-	/** stream writers and readers which are used to send messages */
+
+	/** Stream writers and readers which are used to send messages */
 	private PrintWriter out;
 	private BufferedReader in;
-	
-	/** the used port */
+
+	/** The used port */
 	private int servicePort;
-	
-	/** the time interval between two localization messages */
+
+	/** The time interval between two localization messages */
 	private long timeInterval = 10;
-	//TODO: currently localization messages are sent every 10 ms. This can be changed.
-	
-	/** the time of the last position update in ms */
+	// TODO: currently localization messages are sent every 10 ms. This can be
+	// changed.
+
+	/** The time of the last position update in ms */
 	private long lastPositionUpdate;
-	
-	public V2ICommunicationModule(Robot robot, String ip, int port){
-		this.robot = robot;
+
+	/**
+	 * Standard constructor of a V2I communication module
+	 * 
+	 * @param vehicle
+	 *            The vehicle which shall use this new module
+	 * @param ip
+	 *            The desired IP address of the module
+	 * @param port
+	 *            The desired port which is used for V2I communication
+	 */
+	public V2ICommunicationModule(PlatooningVehicle vehicle, String ip, int port) {
+		this.vehicle = vehicle;
 		try {
-			
-			//initialize writer,socket, and reader
+
+			// initialize writer,socket, and reader
 			socket = new Socket(ip, port);
 			in = new BufferedReader(new InputStreamReader(
 					socket.getInputStream()));
 			out = new PrintWriter(socket.getOutputStream(), true);
-			
-			//send the robots name to the server
-			out.println(robot);
-			
-			//receive the port for service delivery
+
+			// send the robots name to the server
+			out.println(vehicle);
+
+			// receive the port for service delivery
 			servicePort = Integer.parseInt(in.readLine());
-			
-			//connect to the service
+
+			// connect to the service
 			socket = new Socket(ip, servicePort);
 			out = new PrintWriter(socket.getOutputStream(), true);
 			in = new BufferedReader(new InputStreamReader(
 					socket.getInputStream()));
-		} catch (UnknownHostException e) {
-			((Robot) this.robot).drawString("dont know host");
-			System.exit(1);
-		} catch (IOException e) {
-			((Robot) this.robot).drawString("io exception");
-			System.exit(1);
+		} catch (NumberFormatException | IOException e) {
+			e.printStackTrace();
 		}
 	}
-	
+
+	/**
+	 * Central method which listens for new commands and sends position updates
+	 */
 	@Override
-	public void run(){
+	public void run() {
 		String command;
 		lastPositionUpdate = new Date().getTime();
-		while(!this.isInterrupted()){
+		while (!this.isInterrupted()) {
 			try {
-				//TODO: enter the handling of messages here
-				
-				//receive commands from server and execute them
+				// TODO: enter the handling of messages here
+
+				// receive commands from server and execute them
 				command = in.readLine();
-				if(command.equals(Commands.CHANGE_LINE_OVERTAKE)){
-					robot.changeLine(Lane.OVERTAKING);
+				if (command.equals(Commands.CHANGE_LINE_OVERTAKE)) {
+					vehicle.changeLine(Lane.OVERTAKING);
+				} else if (command.equals(Commands.CHANGE_LINE_RIGHT)) {
+					vehicle.changeLine(Lane.RIGHT);
+				} else if (command.equals(Commands.EXIT_RAMP)) {
+					vehicle.exitNextRamp();
+				} else if (command.equals(Commands.STOP)) {
+					vehicle.stopDriving();
+				} else if (command.equals(Commands.START)) {
+					vehicle.startDriving();
+				} else if (command.equals(Commands.JOIN_PLATOON)) {
+					vehicle.joinPlatoon("Mein erstes Platoon");
+					// TODO: change this
+				} else if (command.equals(Commands.LEAVE_PLATOON)) {
+
+					// TODO: enter leaving scenario
+					vehicle.leavePlatoon();
 				}
-				else if(command.equals(Commands.CHANGE_LINE_RIGHT)){
-					robot.changeLine(Lane.RIGHT);
-				}
-				else if(command.equals(Commands.EXIT_RAMP)){
-					robot.exitNextRamp();
-				}
-				else if (command.equals(Commands.STOP)){
-					robot.stopDriving();
-				}
-				else if (command.equals(Commands.START)){
-					robot.startDriving();
-				}
-				else if (command.equals(Commands.JOIN_PLATOON)){
-					robot.joinPlatoon("Mein erstes Platoon");
-				//TODO: change this
-				}
-				else if (command.equals(Commands.LEAVE_PLATOON)){
-					
-					//TODO: enter leaving scenario
-					robot.leavePlatoon();
-					robot.closeV2VCommunication();
-				}
-				//send position update 
-				if(lastPositionUpdate + timeInterval < new Date().getTime()){
-					out.println(((Robot) robot).getPosition().toString());
+				// send position update
+				if (lastPositionUpdate + timeInterval < new Date().getTime()) {
+					out.println(((Robot) vehicle).getPosition().toString());
 					lastPositionUpdate = new Date().getTime();
-				}
-				else{
+				} else {
 					out.println();
 				}
-				//Thread.sleep(100);
-
-		//	} catch (IOException | InterruptedException e) {
-			} catch(IOException e){
-				((Robot) robot).drawString("io exception");
+			} catch (IOException e) {
+				e.printStackTrace();
 				System.exit(1);
 			}
 		}

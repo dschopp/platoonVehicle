@@ -1,7 +1,7 @@
 package remote;
 
-import settings.Commands;
-import settings.Position;
+import tools.Commands;
+import tools.Position;
 
 /**
  * main class for remote steering. launches a server where all robot connect.

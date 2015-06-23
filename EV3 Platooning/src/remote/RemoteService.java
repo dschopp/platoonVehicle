@@ -7,8 +7,8 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-import settings.Commands;
-import settings.Position;
+import tools.Commands;
+import tools.Position;
 
 /**
  * a single service for one robot. the actual communication is done here.

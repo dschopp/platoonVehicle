@@ -1,16 +1,13 @@
 package robot;
 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
 import java.util.Date;
+import java.util.Properties;
 
-import settings.Lane;
-import settings.Position;
-import settings.Settings;
-import settings.Settings_1;
-import settings.Settings_2;
-import settings.Settings_3;
+import tools.Lane;
+import tools.Position;
 import lejos.hardware.Button;
-import lejos.hardware.Key;
-import lejos.hardware.KeyListener;
 import lejos.hardware.lcd.LCD;
 import lejos.hardware.motor.UnregulatedMotor;
 import lejos.hardware.port.MotorPort;
@@ -20,10 +17,20 @@ import lejos.hardware.sensor.EV3UltrasonicSensor;
 import lejos.hardware.sensor.SensorMode;
 import lejos.robotics.Color;
 import lejos.robotics.SampleProvider;
-import lejos.utility.Delay;
 
-/** class representing the robot and all its capabilities */
+/**
+ * The module which contains all capabilities of a Lego Mindstorms EV3
+ * Platooning Vehicle
+ * 
+ * @author Martin
+ *
+ */
 public class Robot implements PlatooningVehicle {
+
+	/**
+	 * The robot's name
+	 */
+	private String name;
 
 	/**
 	 * Enum used to indicate which line to follow REGULAR normal right lane EXIT
@@ -34,145 +41,214 @@ public class Robot implements PlatooningVehicle {
 		REGULAR, EXIT, DONT_EXIT, OVERTAKE;
 	}
 
-	/** the two motors of the EV3 */
+	/** The right motor */
 	private UnregulatedMotor motorRight = new UnregulatedMotor(MotorPort.C);
+
+	/** The left motor */
 	private UnregulatedMotor motorLeft = new UnregulatedMotor(MotorPort.B);
 
-	/** color sensors */
+	/** Right color sensor */
 	private EV3ColorSensor colorSensorRight = new EV3ColorSensor(SensorPort.S3);
+
+	/** Left color sensor (only instantiated if physically existent) */
 	private EV3ColorSensor colorSensorLeft;
 
-	/** ultrasonic sensor for distance measurement */
+	/** Ultrasonic sensor for distance measurement */
 	private EV3UltrasonicSensor usSensor = new EV3UltrasonicSensor(
 			SensorPort.S4);
 
-	/** indicates whether the robot is lead vehicle of a platoon */
-	private boolean isLead;
-	
+	/** Indicates whether the robot is lead vehicle of a platoon */
+	private boolean isLead = true;
+
 	/** Indicates whether the robot is part of a platoon */
 	private boolean isInPlatoon = false;
 
-	/** the current LineFollowingMode */
+	/** The current LineFollowingMode */
 	private LineFollowingMode lineFollowingMode = LineFollowingMode.REGULAR;
 
-	/** indicates whether the robot shall access the next exit ramp */
+	/** Indicates whether the robot shall access the next exit ramp */
 	private boolean shallExit;
 
-	/** indicates the desired gap size between platoon members */
+	/** Indicates the desired gap size between platoon members */
 	private float gapSize;
 
-	/** indicates whether the robot shall terminate as soon as possible */
+	/** Indicates whether the robot shall terminate as soon as possible */
 	private boolean shallStop = true;
 
-	/** indicates whether the robot shall change the current line */
+	/** Indicates whether the robot shall change the current line */
 	private boolean shallChangeLine = false;
 
-	/** colors which are used for line following */
+	// Colors which are used for line following
+
+	/** The default right color of the road (after sensor calibration) */
 	private float defaultRightColor;
+
+	/** The default left color of the road (after sensor calibration) */
 	private float defaultLeftColor;
+
+	/** The default right color of the exit ramps (after sensor calibration) */
 	private float exitColor;
 
-	/** desired color to follow the line in an optimal way */
+	/** Desired color to follow the line in an optimal way */
 	private float lateralMidpoint;
 
-	/**
-	 * parameters used by the PID Controller for line following. need to be
-	 * adjusted for every robot
-	 */
+	// Parameters used by the PID Controller for line following. Need to be
+	// adjusted for every robot
 	private float ki;
 	private float kp;
 	private float kd;
 
-	/** indicates whether the robot has two color sensors or just one */
+	/** Indicates whether the robot has two color sensors or just one */
 	private boolean hasTwoColorSensors;
-	
-	/**the robots velocity */
-	private float velocity;
-	
+
+	/** The robots current (desired) velocity */
+	private float currentVelocity;
+
+	/** The robots standard velocity (defined by config File) */
+	private static final float STANDARD_VELOCITY = 50;
+
 	/** IP and port of the infrastructure unit */
 	private String server_ip;
 	private int server_port;
-	
-	/** communication modules for V2I and V2V communication */
+
+	/** Communication module for V2I communication */
 	private V2ICommunicationModule v2icommunication;
+
+	/** Communication module for V2V communication */
 	private V2VCommunicationModule v2vcommunication;
-	
-	/** the settings instance which is used for the robot */
-	private Settings settings;
-	
-	/**indicates whether the robot shall leave the current platoon */
+
+	/** Indicates whether the robot shall leave the current platoon */
 	private boolean shallLeavePlatoon;
-	
-	/**the number of green markers on the floor that the robot passed */
+
+	/** The number of green markers on the floor that the robot passed */
 	private int markerCount = 0;
-	
-	/** the current position of the robot */
+
+	/** The current position of the robot */
 	private Position currentPosition = new Position();
-	
-	/** the current highway lane. default is right */
+
+	/** The current highway lane. default is right */
 	private Lane currentLane = Lane.RIGHT;
-	
-	/** indicates whether the robot shall terminate as fast as possible */
+
+	/** Indicates whether the robot shall terminate as fast as possible */
 	private boolean shallTerminate = false;
-	
+
+	/**
+	 * Indicates whether an emergency notification was sent (to avoid duplicate
+	 * messages)
+	 */
 	private boolean emergencyNotificationSent = false;
 
 	/**
-	 * constructor
+	 * Standard constructor of a Lego EV3 platooning robot
 	 * 
 	 * @param settings
-	 *            the settings for the robot
 	 */
-	public Robot(Settings settings) {
-		this.settings = settings;
-		adjustSettings(settings);
+	public Robot(String configFileName) {
+
+		// read configuration
+		handleProperties(configFileName);
+
+		// initiate second color sensor if present
 		if (hasTwoColorSensors) {
 			colorSensorLeft = new EV3ColorSensor(SensorPort.S2);
 		}
-		Button.ESCAPE.addKeyListener(new TerminateButtonListener());
+
+		// calibrate light sensors
 		calibrateLightSensor();
 
-		
+		// enable communication
 		enableCommunication();
-		
-		while(!shallTerminate){
+
+		// as long as no termination signals were received, the robot continues
+		// following the highway
+		while (!shallTerminate) {
+			currentVelocity = STANDARD_VELOCITY;
 			driveOnHighway();
 		}
-		
+
 	}
-	
-	public synchronized Position getPosition(){
+
+	/**
+	 * Initial method to read properties (a configuration) from a configuration
+	 * file
+	 * 
+	 * @param configFileName
+	 *            The file name of the configuration file
+	 */
+	private void handleProperties(String configFileName) {
+		try {
+			// load properties from config file
+			Properties properties = new Properties();
+			BufferedInputStream stream = new BufferedInputStream(
+					new FileInputStream(configFileName));
+			properties.load(stream);
+			stream.close();
+
+			// adjust parameters based on properties
+			name = properties.getProperty("name");
+			kp = Float.parseFloat(properties.getProperty("kp"));
+			ki = Float.parseFloat(properties.getProperty("kp"));
+			kd = Float.parseFloat(properties.getProperty("kp"));
+			gapSize = Float.parseFloat(properties.getProperty("gapSize"));
+			hasTwoColorSensors = Boolean.parseBoolean(properties
+					.getProperty("hasTwoColorSensors"));
+			server_ip = properties.getProperty("server_ip");
+			server_port = Integer.parseInt(properties
+					.getProperty("server_port"));
+
+		} catch (Exception e) {
+			System.out.println("Error: Not able to read properties file at "
+					+ configFileName);
+		}
+	}
+
+	/**
+	 * Retrieves the robot's current position
+	 * 
+	 * @return The robot's current position
+	 */
+	public synchronized Position getPosition() {
 		return this.currentPosition;
 	}
-	
-	public synchronized void setPosition(int markerNumber, double additionalDistance){
+
+	/**
+	 * Sets the robots current position according to the parameters
+	 * 
+	 * @param markerNumber
+	 *            The number of position markers which were passed
+	 * @param additionalDistance
+	 *            The additional distance which was traveled after passing the
+	 *            last marker
+	 */
+	public synchronized void setPosition(int markerNumber,
+			double additionalDistance) {
 		currentPosition.setMarkerNumber(markerNumber);
 		currentPosition.setAdditionalDistance(additionalDistance);
 	}
-	
-	public String getName(){
-		return this.settings.getName();
+
+	/**
+	 * Retrieves the robot's name
+	 * 
+	 * @return The robot's name
+	 */
+	public String getName() {
+		return name;
 	}
-	
-	public void setShallChangeLine(boolean shallChangeLine){
+
+	/**
+	 * Sets the shallChangeLine attribute according to the parameter
+	 * 
+	 * @param shallChangeLine
+	 *            The desired value for the shallChangeLine attribute
+	 */
+	public void setShallChangeLine(boolean shallChangeLine) {
 		this.shallChangeLine = shallChangeLine;
 	}
 
-	public void adjustSettings(Settings settings) {
-		this.isLead = settings.isLead();
-		shallExit = settings.shallExit();
-		gapSize = settings.getGapSize();
-		hasTwoColorSensors = settings.hasTwoColorSensors();
-		kp = settings.getKp();
-		ki = settings.getKi();
-		kd = settings.getKd();
-		velocity = settings.getVelocity();
-
-	}
-	
-	private void enableCommunication(){
-		server_ip = settings.getServerIP();
-		server_port = settings.getServerPort();
+	/**
+	 * Initial method to enable V2I and V2V communication
+	 */
+	private void enableCommunication() {
 		System.out.println("Enable V2I communication...");
 		enableV2ICommunication(server_ip, server_port);
 		System.out.println("V2I communication enabled.");
@@ -180,23 +256,43 @@ public class Robot implements PlatooningVehicle {
 		enableV2VCommunication();
 		System.out.println("V2V communication enabled.");
 	}
-	
-	private void enableV2VCommunication(){
-		v2vcommunication = new V2VCommunicationModule(this);
-	}
-	
-	private void enableV2ICommunication(String ip, int port){
-		v2icommunication = new V2ICommunicationModule(this, server_ip, server_port);
-		v2icommunication.start();
-	}
-	
-	
 
 	/**
-	 * calibrates the light sensor to follow the lines. is needed to cope with
-	 * different light conditions etc
+	 * Enable V2V communication
 	 */
-	public void calibrateLightSensor() {
+	private void enableV2VCommunication() {
+		v2vcommunication = new V2VCommunicationModule(this);
+	}
+
+	/**
+	 * Enable V2I communication
+	 * 
+	 * @param ip
+	 *            The IP to connect to
+	 * @param port
+	 *            The port to connect to
+	 */
+	private void enableV2ICommunication(String ip, int port) {
+		v2icommunication = new V2ICommunicationModule(this, server_ip,
+				server_port);
+		v2icommunication.start();
+	}
+
+	/**
+	 * Terminate V2V communication (e.g., if the robot leaves a platoon)
+	 */
+	public void closeV2VCommunication() {
+		v2vcommunication.close();
+
+	}
+
+	/**
+	 * Calibrates the light sensor to follow the lines. Is needed to cope with
+	 * different light conditions etc.
+	 */
+	private void calibrateLightSensor() {
+
+		// calibrate right road side color
 		LCD.drawString("1. Press the ENTER", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate right", 0, 2);
@@ -208,6 +304,7 @@ public class Robot implements PlatooningVehicle {
 		defaultRightColor = colorSample[0];
 		LCD.clear();
 
+		// calibrate left road side color
 		LCD.drawString("2. Press the ENTER", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate left", 0, 2);
@@ -217,6 +314,7 @@ public class Robot implements PlatooningVehicle {
 		defaultLeftColor = colorSample[0];
 		LCD.clear();
 
+		// calibrate right exit ramp color
 		LCD.drawString("3. Press the ENTER ", 0, 0);
 		LCD.drawString("button to", 0, 1);
 		LCD.drawString("calibrate right", 0, 2);
@@ -228,16 +326,15 @@ public class Robot implements PlatooningVehicle {
 		System.out.println("Sensors calibrated");
 
 	}
-	
-	public void drawString(String message){
-		LCD.drawString(message, 0, 0);
-	}
 
 	/**
-	 * lets the robot follow the line like a highway according to parameters
-	 * like isLead, shallExit etc.
+	 * Central method of the Lego EV3 platooning system. The robot follows the
+	 * highway according to multiple parameters. Events like new detected color
+	 * markers etc. are basically handled here.
 	 */
-	public void driveOnHighway() {
+	private void driveOnHighway() {
+
+		// initiate color sensors
 		SensorMode colorMode = null;
 		float[] colorSample = null;
 		if (hasTwoColorSensors) {
@@ -245,68 +342,95 @@ public class Robot implements PlatooningVehicle {
 			colorSample = new float[colorMode.sampleSize()];
 		}
 		int currentColor = Color.NONE;
-
 		SensorMode redMode = colorSensorRight.getRedMode();
 		float[] redSample = new float[redMode.sampleSize()];
 
+		// initiate distance sensor and samples
 		SampleProvider distanceMode = usSensor.getDistanceMode();
 		float[] distanceSample = new float[distanceMode.sampleSize()];
 
+		// as long as the robot shall not stop
 		while (!shallStop) {
+
+			// if it has a second color sensor: read color markers
 			if (hasTwoColorSensors) {
 				colorMode.fetchSample(colorSample, 0);
 				currentColor = (int) colorSample[0];
 			}
+
+			// if the line shall be changed: change line
 			if (shallChangeLine) {
 				changeLine();
 			}
-			if(shallLeavePlatoon){
+
+			// if the platoon shall be left: leave platoon
+			if (shallLeavePlatoon) {
 				leavePlatoon();
 			}
 
-			//brake if an obstacle is detected
+			// brake if an obstacle is detected
 			if (isLead) {
 				distanceMode.fetchSample(distanceSample, 0);
 				if (distanceSample[0] < 0.15) {
-					velocity = 0;
-					if(isInPlatoon){
-						//send emergency notification
-						if(!emergencyNotificationSent){
-							v2vcommunication.sendMessage(getName() + ": EMERGENCY BRAKE", true);
+					currentVelocity = 0;
+					if (isInPlatoon) {
+						// send emergency notification
+						if (!emergencyNotificationSent) {
+							v2vcommunication.sendMessage(getName()
+									+ ": EMERGENCY BRAKE", true);
 							emergencyNotificationSent = true;
 						}
 					}
-				}
-				else{
-					velocity = settings.getVelocity();
+				} else {
+					currentVelocity = STANDARD_VELOCITY;
 					emergencyNotificationSent = false;
 				}
 			}
-			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
+
+			// set the current position
+			setPosition(markerCount, ((double) motorLeft.getTachoCount())
+					/ 360D * Math.PI * 5.6D);
+
+			// different actions based on the color markings which were observed
 			switch (currentColor) {
-			case Color.YELLOW:			
-			case Color.GREEN:			
+
+			// if a position marking is detected: refresh position
+			case Color.YELLOW:
+			case Color.GREEN:
 			case Color.NONE:
 			case Color.BLUE:
-				if(currentPosition.getAdditionalDistance() >  7){
+				if (currentPosition.getAdditionalDistance() > 7) {
 					setPosition(++markerCount, 0);
 					motorLeft.resetTachoCount();
 				}
+
+				// if no marking was detected: follow the highway as regular
 			case Color.BLACK:
 				lineFollowingMode = LineFollowingMode.REGULAR;
 				followLine(redMode, redSample);
 				break;
+
+			// if a red marking was detected and if the robot shall exit the
+			// next ramp: start exiting highway
 			case Color.RED:
 				if (shallExit) {
-					if(isInPlatoon){
-						v2vcommunication.sendMessage(getName() + ": I exit the highway now", false);
+
+					// send a leaving message to platoon
+					if (isInPlatoon) {
+						v2vcommunication.sendMessage(getName()
+								+ ": I exit the highway now", false);
 					}
+
+					// adjust line following mode (to the color of the exit
+					// ramp)
 					lineFollowingMode = LineFollowingMode.EXIT;
 					isLead = true;
 				} else {
 					lineFollowingMode = LineFollowingMode.DONT_EXIT;
 
 				}
+
+				// as long as no blue marking is detected: follow the exit ramp
 				while (currentColor != Color.BLUE) {
 					if (hasTwoColorSensors) {
 						colorMode.fetchSample(colorSample, 0);
@@ -318,41 +442,25 @@ public class Robot implements PlatooningVehicle {
 				shallExit = false;
 				break;
 			}
-			//refresh current position
-			setPosition(markerCount, ((double)motorLeft.getTachoCount()) / 360D * Math.PI * 5.6D);
+			// refresh current position
+			setPosition(markerCount, ((double) motorLeft.getTachoCount())
+					/ 360D * Math.PI * 5.6D);
 
 		}
+
+		// if the robot shall stop: stop all motors
 		motorLeft.stop();
 		motorRight.stop();
 
 	}
 
-//	/** the robot leaves the platoon by reducing its speed until a gap size of 50 cm */
-//	private void leavePlatoon() {
-//		velocity = velocity - 20;
-//		isLead = false;
-//		
-//		SampleProvider distanceMode = usSensor.getDistanceMode();
-//		float[] distanceSample = new float[distanceMode.sampleSize()];
-//		
-//		SensorMode redMode = colorSensorRight.getRedMode();
-//		float[] redSample = new float[redMode.sampleSize()];
-//		
-//		float distance = 0;
-//		while(distance < 1){
-//			followLine(redMode, redSample);
-//			distanceMode.fetchSample(distanceSample, 0);
-//			distance = distanceSample[0];
-//		}
-//		velocity = velocity + 20;
-//		shallLeavePlatoon = false;
-//		isLead = true;
-//		
-//	}
-
-	/** the robot changes the current highway lane */
+	/**
+	 * The robot changes the current highway lane
+	 */
 	private void changeLine() {
-		if(isInPlatoon){
+
+		// send a message via V2V communication if in platoon
+		if (isInPlatoon) {
 			v2vcommunication.sendMessage(getName() + ": I change line", false);
 		}
 		SensorMode redMode = colorSensorRight.getRedMode();
@@ -361,19 +469,26 @@ public class Robot implements PlatooningVehicle {
 		float[] colorSample = new float[colorMode.sampleSize()];
 		redSample[0] = 100;
 		int currentColor;
+
+		// if the robot is currently on the right highway lane
 		if (currentLane == Lane.RIGHT) {
+
+			// turn around slightly (for 300 ms)
 			motorLeft.setPower(20);
 			motorRight.setPower(70);
 			motorLeft.forward();
 			motorRight.forward();
 			long startManeuver = new Date().getTime();
 			int i = 0;
-			while(new Date().getTime() < startManeuver + 300){
+			while (new Date().getTime() < startManeuver + 300) {
+
+				// observe position markings
 				colorMode.fetchSample(colorSample, 0);
 				currentColor = (int) colorSample[0];
-				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
-				if(currentColor == Color.BLUE){
-					if(currentPosition.getAdditionalDistance() >  7){
+				currentPosition.setAdditionalDistance((double) motorLeft
+						.getTachoCount() / 360 * Math.PI * 5.6);
+				if (currentColor == Color.BLUE) {
+					if (currentPosition.getAdditionalDistance() > 7) {
 						currentPosition.setMarkerNumber(++markerCount);
 						currentPosition.setAdditionalDistance(0);
 						motorLeft.resetTachoCount();
@@ -382,74 +497,108 @@ public class Robot implements PlatooningVehicle {
 				LCD.clear();
 				LCD.drawString(Integer.toString(++i), 0, 0);
 			}
-			motorLeft.setPower((int) settings.getVelocity());
-			motorRight.setPower((int) settings.getVelocity());
+
+			// driving straightforward until the left highway lane is reached
+			motorLeft.setPower((int) currentVelocity);
+			motorRight.setPower((int) currentVelocity);
 			while (redSample[0] > defaultRightColor + 0.1
 					|| redSample[0] < defaultRightColor - 0.1) {
+
+				// observe position markings
 				redMode.fetchSample(redSample, 0);
 				colorMode.fetchSample(colorSample, 0);
 				currentColor = (int) colorSample[0];
-				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
-				if(currentColor == Color.BLUE){
-					if(currentPosition.getAdditionalDistance() >  7){
+				currentPosition.setAdditionalDistance((double) motorLeft
+						.getTachoCount() / 360 * Math.PI * 5.6);
+				if (currentColor == Color.BLUE) {
+					if (currentPosition.getAdditionalDistance() > 7) {
 						currentPosition.setMarkerNumber(++markerCount);
 						currentPosition.setAdditionalDistance(0);
 						motorLeft.resetTachoCount();
 					}
 				}
 			}
+
+			// lane change successful, normal travelling
 			currentLane = Lane.OVERTAKING;
-			velocity = settings.getVelocity() + 20;
+			currentVelocity = STANDARD_VELOCITY + 20;
+
+			// if the robot is currently on the left highway lane
 		} else {
+
+			// turn around slightly (for 300 ms)
 			motorRight.setPower(20);
 			motorLeft.setPower(70);
 			motorLeft.forward();
 			motorRight.forward();
 			long startManeuver = new Date().getTime();
-			while(new Date().getTime() < startManeuver + 300){
+			while (new Date().getTime() < startManeuver + 300) {
+
+				// observe position markings
 				colorMode.fetchSample(colorSample, 0);
 				currentColor = (int) colorSample[0];
-				currentPosition.setAdditionalDistance(motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
-				if(currentColor == Color.BLUE){
-					if(currentPosition.getAdditionalDistance() >  7){
+				currentPosition.setAdditionalDistance(motorLeft.getTachoCount()
+						/ 360 * Math.PI * 5.6);
+				if (currentColor == Color.BLUE) {
+					if (currentPosition.getAdditionalDistance() > 7) {
 						currentPosition.setMarkerNumber(++markerCount);
 						currentPosition.setAdditionalDistance(0);
 						motorLeft.resetTachoCount();
 					}
 				}
 			}
-			motorLeft.setPower((int) settings.getVelocity());
-			motorRight.setPower((int) settings.getVelocity());
+
+			// driving straightforward until the right highway lane is reached
+			motorLeft.setPower((int) currentVelocity);
+			motorRight.setPower((int) currentVelocity);
 			while (redSample[0] > defaultRightColor + 0.1
 					|| redSample[0] < defaultRightColor - 0.1) {
 				redMode.fetchSample(redSample, 0);
 				colorMode.fetchSample(colorSample, 0);
 				currentColor = (int) colorSample[0];
-				currentPosition.setAdditionalDistance((double)motorLeft.getTachoCount() / 360 * Math.PI * 5.6);
-				if(currentColor == Color.BLUE){
-					if(currentPosition.getAdditionalDistance() >  7){
+				currentPosition.setAdditionalDistance((double) motorLeft
+						.getTachoCount() / 360 * Math.PI * 5.6);
+				if (currentColor == Color.BLUE) {
+					if (currentPosition.getAdditionalDistance() > 7) {
 						currentPosition.setMarkerNumber(++markerCount);
 						currentPosition.setAdditionalDistance(0);
 						motorLeft.resetTachoCount();
 					}
 				}
 			}
+			// lane change successful, normal travelling
 			currentLane = Lane.RIGHT;
-			velocity = settings.getVelocity();
+			currentVelocity = STANDARD_VELOCITY;
 		}
+
+		// reset attribute and send message to platoon that line changing was
+		// finished
 		shallChangeLine = false;
-		if(isInPlatoon){
-			v2vcommunication.sendMessage(getName() + ": I finished changing lines", false);
+		if (isInPlatoon) {
+			v2vcommunication.sendMessage(getName()
+					+ ": I finished changing lines", false);
 		}
 
 	}
 
-	/** basic method to follow a line */
+	/**
+	 * Basic method to follow a line based on the parameters
+	 * 
+	 * @param redMode
+	 *            The SensorMode object used for line following (sensor mode of
+	 *            the right color sensor)
+	 * @param redSample
+	 *            The sample object of the SensorMode
+	 */
 	private void followLine(SensorMode redMode, float[] redSample) {
+
+		// the distance measure
 		SampleProvider distanceMode = usSensor.getDistanceMode();
 		float[] distanceSample = new float[distanceMode.sampleSize()];
 
 		int errorMultiplicator = 1;
+
+		// calculate the desired lateral midpoint based on the current situation
 		if (lineFollowingMode == LineFollowingMode.REGULAR) {
 			lateralMidpoint = (defaultRightColor - defaultLeftColor) / 2
 					+ defaultLeftColor;
@@ -462,35 +611,54 @@ public class Robot implements PlatooningVehicle {
 		float lateralCorrection = 0;
 		float longitudinalCorrection = 0;
 
+		// gather new distance and color data
 		redMode.fetchSample(redSample, 0);
 		distanceMode.fetchSample(distanceSample, 0);
+
+		// calculate lateral correction based on the midpoint
 		lateralCorrection = calculateLateralCorrection(redSample[0],
 				lateralMidpoint);
+
+		// if the vehicle is not leading a platoon (or driving solo), it should
+		// maintain the gap size
 		if (!isLead) {
 			longitudinalCorrection = calculateLongitudinalCorrection(
 					distanceSample[0], gapSize);
 		}
+
+		// adjustment if the robot is currently on the left highway lane
 		if (currentLane == Lane.OVERTAKING) {
 			lateralCorrection = -lateralCorrection;
 		}
-		int powerLeft = (int) (velocity + errorMultiplicator * velocity * lateralCorrection - longitudinalCorrection);
+
+		// finally calculate the needed power of the two motors
+		int powerLeft = (int) (currentVelocity + errorMultiplicator
+				* currentVelocity * lateralCorrection - longitudinalCorrection);
 		motorLeft.setPower(powerLeft);
-		int powerRight = (int) (velocity - errorMultiplicator * velocity
-				* lateralCorrection - longitudinalCorrection);
+		int powerRight = (int) (currentVelocity - errorMultiplicator
+				* currentVelocity * lateralCorrection - longitudinalCorrection);
 		motorRight.setPower(powerRight);
 		motorLeft.forward();
 		motorRight.forward();
 	}
 
 	/**
-	 * calculates the lateral correction needed to follow the line in an optimal
+	 * Calculates the lateral correction needed to follow a line in the optimal
 	 * way
+	 * 
+	 * @param value
+	 *            The current value of the right color sensor
+	 * @param midpoint
+	 *            The desired value of the right color sensor (lateral midpoint)
+	 * @return The lateral correction needed to follow a line in the optimal way
 	 */
 	public float calculateLateralCorrection(float value, float midpoint) {
+
+		// PID Controller based on the parameters Kp, Ki, and Kd
 		float currentKp = kp;
 		float currentKi = ki;
 		float currentKd = kd;
-		if(velocity > 50){
+		if (currentVelocity > 50) {
 			currentKp = 2F;
 			currentKi = 0;
 			currentKd = 0;
@@ -503,12 +671,23 @@ public class Robot implements PlatooningVehicle {
 		error = midpoint - value;
 		integral = error + integral;
 		derivative = error - lastError;
-		correction = currentKp * error + currentKi * integral + currentKd * derivative;
+		correction = currentKp * error + currentKi * integral + currentKd
+				* derivative;
 		return correction;
 
 	}
 
-	/** calculates speed adjustments for optimal gap keeping */
+	/**
+	 * Calculates speed adjustments (for both motors) needed to maintain the gap
+	 * size to robot in front
+	 * 
+	 * @param value
+	 *            The current distance to the robot in front
+	 * @param midpoint
+	 *            The desired distance to the robot in front (longitudinal
+	 *            midpoint)
+	 * @return The speed adjustment needed to maintain the desired gap size
+	 */
 	public float calculateLongitudinalCorrection(float value, float midpoint) {
 		float k = 400;
 		float error;
@@ -522,79 +701,52 @@ public class Robot implements PlatooningVehicle {
 		} else {
 			return correction;
 		}
-
 	}
 
-	/**
-	 * indicates whether the robot is close to a wall (less than 10 cm distance)
-	 */
-	public boolean closeToWall() {
-		SampleProvider distanceMode = usSensor.getDistanceMode();
-		float[] sample = new float[distanceMode.sampleSize()];
-		distanceMode.fetchSample(sample, 0);
-		return sample[0] < 0.1;
-	}
-
-	/** listener used to stop the robot if ESCAPE button is pressed */
-	class TerminateButtonListener implements KeyListener {
-		@Override
-		public void keyPressed(Key k) {
-			shallTerminate = true;
-		}
-
-		@Override
-		public void keyReleased(Key k) {
-			// Do nothing
-
-		}
-	}
-
-
-	public void clearDisplay() {
-		LCD.clear();
-		
-	}
-	
-	public String toString(){
-		return settings.getName();
+	// methods which are required to implement the interface PlatooningVehicle
+	// refer to the interface definition for details
+	@Override
+	public String toString() {
+		return name;
 	}
 
 	@Override
 	public void setVelocity(int velocity) {
-		this.velocity = velocity;
+		this.currentVelocity = velocity;
 		System.out.println("Velocity set to: " + velocity);
-		
+
 	}
 
 	@Override
 	public void changeLine(Lane lane) {
-		if(lane != currentLane){
+		if (lane != currentLane) {
 			this.shallChangeLine = true;
 		}
-		
+
 	}
 
 	@Override
 	public void joinPlatoon(String platoonName) {
 		v2vcommunication.joinGroup(platoonName);
-		System.out.println("Joined V2V communication of platoon " + platoonName);
+		System.out
+				.println("Joined V2V communication of platoon " + platoonName);
 		v2vcommunication.sendMessage(getName() + ": Hello, I'm new!", false);
-		if(v2vcommunication.getPlatoonSize() > 1){
+		if (v2vcommunication.getPlatoonSize() > 1) {
 			isLead = false;
-		}
-		else{
+		} else {
 			isLead = true;
-		}	
+		}
 		isInPlatoon = true;
 	}
 
 	@Override
 	public void leavePlatoon() {
 		// TODO What is the desired scenario?
-		if(isInPlatoon){
-			v2vcommunication.sendMessage(getName() + ": I leave the platoon", false);
+		if (isInPlatoon) {
+			v2vcommunication.sendMessage(getName() + ": I leave the platoon",
+					false);
 			isInPlatoon = false;
-			velocity = 50;
+			currentVelocity = STANDARD_VELOCITY;
 			System.out.println("Left the platoon.");
 		}
 	}
@@ -603,55 +755,59 @@ public class Robot implements PlatooningVehicle {
 	public void startDriving() {
 		shallStop = false;
 		System.out.println("Started driving");
-		
+
 	}
 
 	@Override
 	public void stopDriving() {
-		if(isInPlatoon){
+		if (isInPlatoon) {
 			v2vcommunication.sendMessage(getName() + ": I have to stop", false);
 		}
 		motorLeft.setPower(0);
 		motorRight.setPower(0);
 		shallStop = true;
 		System.out.println("Stopped driving");
-		
+
 	}
 
 	@Override
 	public void exitNextRamp() {
-		if(isInPlatoon){
-			v2vcommunication.sendMessage(getName() + ": I will exit next ramp", false);
+		if (isInPlatoon) {
+			v2vcommunication.sendMessage(getName() + ": I will exit next ramp",
+					false);
 		}
 		shallExit = true;
-		
+
 	}
 
 	@Override
 	public void setGapSize(float gapSize) {
 		this.gapSize = gapSize;
 		System.out.println("Gap size set to " + gapSize);
-		
-	}
-	
-	@Override
-	public boolean sendMessageToPlatoon(String message, boolean isOOB){
-		if(v2vcommunication == null ){
-			return false;
-		}
-		else{
-			v2vcommunication.sendMessage(message, isOOB);
-			return true;
-		}	
+
 	}
 
-	public void closeV2VCommunication() {
-		v2vcommunication.close();
-		
+	@Override
+	public boolean sendMessageToPlatoon(String message, boolean isOOB) {
+		if (v2vcommunication == null) {
+			return false;
+		} else {
+			v2vcommunication.sendMessage(message, isOOB);
+			return true;
+		}
 	}
-	
-	public static void main(String[] args){
-		Robot robot = new Robot(new Settings_1());
+
+	/**
+	 * Main method
+	 * 
+	 * @param args
+	 *            args
+	 */
+	public static void main(String[] args) {
+
+		// Standard config file is "config.txt"
+		@SuppressWarnings("unused")
+		Robot robot = new Robot("config.txt");
 	}
 
 }

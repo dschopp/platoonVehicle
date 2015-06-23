@@ -1,11 +1,13 @@
-package settings;
+package tools;
 
-/** helper class to define all commands which can be sent to the robot 
- * 
+/**
+ * Helper class which defines all commands which are transmitted between the roadside infrastructure and the platooning vehicle
  * @author Martin
  *
  */
 public class Commands {
+	
+	//TODO: Adjust commands to protocol
 	public static final String LEAVE_PLATOON = "leave platoon";
 	public static final String JOIN_PLATOON = "join platoon";
 	public static final String EXIT_RAMP = "exit ramp";
