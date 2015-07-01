@@ -5,10 +5,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
-import java.util.Date;
+import java.util.ArrayList;
 
-import tools.Commands;
+import tools.DecodedData;
 import tools.Lane;
+import Protocol.Protocol;
 
 /**
  * Module representing the communication between the vehicle and the roadside
@@ -17,7 +18,7 @@ import tools.Lane;
  * @author Martin
  *
  */
-public class V2ICommunicationModule extends Thread {
+public class V2ICommunicationModule {
 
 	/** The corresponding vehicle for this module */
 	private PlatooningVehicle vehicle;
@@ -29,16 +30,10 @@ public class V2ICommunicationModule extends Thread {
 	private PrintWriter out;
 	private BufferedReader in;
 
-	/** The used port */
-	private int servicePort;
-
-	/** The time interval between two localization messages */
-	private long timeInterval = 10;
-	// TODO: currently localization messages are sent every 10 ms. This can be
-	// changed.
-
-	/** The time of the last position update in ms */
-	private long lastPositionUpdate;
+	private boolean hasReceivedVelocity = false;
+	private V2ISender sender;
+	private V2IReceiver receiver;
+	private ArrayList<String> messageQueue = new ArrayList<String>();
 
 	/**
 	 * Standard constructor of a V2I communication module
@@ -63,62 +58,159 @@ public class V2ICommunicationModule extends Thread {
 			// send the robots name to the server
 			out.println(vehicle);
 
-			// receive the port for service delivery
-			servicePort = Integer.parseInt(in.readLine());
+			// TODO: initial message via protocol
 
-			// connect to the service
-			socket = new Socket(ip, servicePort);
-			out = new PrintWriter(socket.getOutputStream(), true);
-			in = new BufferedReader(new InputStreamReader(
-					socket.getInputStream()));
 		} catch (NumberFormatException | IOException e) {
 			e.printStackTrace();
 		}
 	}
 
-	/**
-	 * Central method which listens for new commands and sends position updates
-	 */
-	@Override
-	public void run() {
-		String command;
-		lastPositionUpdate = new Date().getTime();
-		while (!this.isInterrupted()) {
-			try {
-				// TODO: enter the handling of messages here
+	private synchronized void putMessageInQueue(String message) {
+		messageQueue.add(message);
+		System.out.println("Message queue status: " + messageQueue);
+	}
 
-				// receive commands from server and execute them
-				command = in.readLine();
-				if (command.equals(Commands.CHANGE_LINE_OVERTAKE)) {
-					vehicle.changeLine(Lane.OVERTAKING);
-				} else if (command.equals(Commands.CHANGE_LINE_RIGHT)) {
-					vehicle.changeLine(Lane.RIGHT);
-				} else if (command.equals(Commands.EXIT_RAMP)) {
-					vehicle.exitNextRamp();
-				} else if (command.equals(Commands.STOP)) {
-					vehicle.stopDriving();
-				} else if (command.equals(Commands.START)) {
-					vehicle.startDriving();
-				} else if (command.equals(Commands.JOIN_PLATOON)) {
-					vehicle.joinPlatoon("Mein erstes Platoon");
-					// TODO: change this
-				} else if (command.equals(Commands.LEAVE_PLATOON)) {
+	private synchronized String popMessageFromQueue() {
+		if (messageQueue.size() > 0) {
+			String message = messageQueue.remove(0);
+			messageQueue.trimToSize();
+			System.out.println("Message queue status: " + messageQueue);
+			return message;
+		} else {
+			return null;
+		}
+	}
 
-					// TODO: enter leaving scenario
-					vehicle.leavePlatoon();
+	public void sendMessage() {
+		putMessageInQueue(Protocol.createString(vehicle));
+	}
+
+	public boolean getHasReceivedVelocity() {
+		return hasReceivedVelocity;
+	}
+
+	public void startCommunication() {
+		sender = new V2ISender();
+		receiver = new V2IReceiver();
+		sender.start();
+		receiver.start();
+	}
+
+	public void closeCommunication() {
+		sender.interrupt();
+		receiver.interrupt();
+		System.out.println("V2I communication terminated");
+	}
+
+	// /**
+	// * Central method which listens for new commands and sends position
+	// updates
+	// */
+	// @Override
+	// public void run() {
+	// String command;
+	// lastPositionUpdate = new Date().getTime();
+	// System.out.println("vor dem while");
+	// while (!this.isInterrupted()) {
+	// try {
+	//
+	// System.out.println("Listening to command");
+	// // receive commands from server and execute them
+	// command = in.readLine();
+	// System.out.println("Received: " + command);
+	// if (command.equals(Commands.CHANGE_LINE_OVERTAKE)) {
+	// vehicle.changeLine(Lane.OVERTAKING);
+	// } else if (command.equals(Commands.CHANGE_LINE_RIGHT)) {
+	// vehicle.changeLine(Lane.RIGHT);
+	// } else if (command.equals(Commands.EXIT_RAMP)) {
+	// vehicle.exitNextRamp();
+	// } else if (command.equals(Commands.STOP)) {
+	// vehicle.stopDriving();
+	// } else if (command.equals(Commands.START)) {
+	// vehicle.startDriving();
+	// } else if (command.equals(Commands.JOIN_PLATOON)) {
+	// vehicle.joinPlatoon("Mein erstes Platoon");
+	//
+	// } else if (command.equals(Commands.LEAVE_PLATOON)) {
+	//
+	//
+	// vehicle.leavePlatoon();
+	// }
+	// // send position update
+	// if (lastPositionUpdate + timeInterval < new Date().getTime()) {
+	// out.println(((Robot) vehicle).getPosition().toString());
+	// lastPositionUpdate = new Date().getTime();
+	// } else {
+	// out.println();
+	// }
+	// } catch (IOException e) {
+	// e.printStackTrace();
+	// System.exit(1);
+	// }
+	// }
+	//
+	// }
+
+	private class V2IReceiver extends Thread {
+		@Override
+		public void run() {
+			System.out.println("V2I communication ready to receive");
+			String message;
+			while (!this.isInterrupted()) {
+				try {
+					message = in.readLine();
+					System.out.println("Received: " + message);
+					DecodedData receivedData = Protocol.decodeString(message);
+					vehicle.setVelocity((int) receivedData.getVelocity());
+					hasReceivedVelocity = true;
+
+					switch (receivedData.getCommand()) {
+					case Protocol.COMMAND_CREATE:
+					case Protocol.COMMAND_JOIN:
+						if (receivedData.getPlatoonNumber() != 0) {
+							vehicle.joinPlatoon(Integer.toString(receivedData
+									.getPlatoonNumber()));
+						}
+						break;
+
+					case Protocol.COMMAND_LEAVE_EXIT:
+						vehicle.exitNextRamp();
+						System.out.println("Exit branch");
+						vehicle.leavePlatoon();
+						break;
+					case Protocol.COMMAND_LEAVE_OVER:
+						vehicle.leavePlatoon();
+						vehicle.changeLine(Lane.OVERTAKING);
+						break;
+					case Protocol.COMMAND_OVERTAKING:
+						vehicle.changeLine(Lane.OVERTAKING);
+						break;
+					}
+
+					// TODO: handle messages by applying protocol
+				} catch (IOException e) {
+					e.printStackTrace();
 				}
-				// send position update
-				if (lastPositionUpdate + timeInterval < new Date().getTime()) {
-					out.println(((Robot) vehicle).getPosition().toString());
-					lastPositionUpdate = new Date().getTime();
-				} else {
-					out.println();
-				}
-			} catch (IOException e) {
-				e.printStackTrace();
-				System.exit(1);
+
 			}
 		}
-
 	}
+
+	private class V2ISender extends Thread {
+
+		@Override
+		public void run() {
+
+			System.out.println("V2I communication ready to send");
+			while (!this.isInterrupted()) {
+				String message = popMessageFromQueue();
+				if (message != null) {
+					out.println(message);
+				}
+
+			}
+		}
+	}
+
 }
+
