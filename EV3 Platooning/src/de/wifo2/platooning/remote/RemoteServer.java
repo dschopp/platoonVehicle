@@ -1,4 +1,4 @@
-package remote;
+package de.wifo2.platooning.remote;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -10,7 +10,7 @@ import java.util.HashMap;
 
 /**
  * server which connects with new robots and launches services for each robot.
- * 
+ * @deprecated Use the protocol instead
  * @author Martin
  *
  */

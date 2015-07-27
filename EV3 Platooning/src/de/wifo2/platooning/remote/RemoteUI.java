@@ -1,4 +1,4 @@
-package remote;
+package de.wifo2.platooning.remote;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -13,16 +13,22 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextArea;
 
-import tools.Commands;
+import de.wifo2.platooning.utils.Commands;
+
+
 
 /** simple UI used to send commands to the robot
- * 
+ * @deprecated Use the protocol instead
  * @author Martin
  *
  */
 
 public class RemoteUI extends JFrame {
 	
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
 	/**ui elements */
 	private JComboBox<String> robotBox = new JComboBox<String>();
 	private JComboBox<String> commandBox;

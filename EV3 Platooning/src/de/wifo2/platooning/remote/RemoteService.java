@@ -1,4 +1,4 @@
-package remote;
+package de.wifo2.platooning.remote;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -7,12 +7,9 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-import tools.Commands;
-import tools.Position;
-
 /**
  * a single service for one robot. the actual communication is done here.
- * 
+ * @deprecated Use the protocol instead
  * @author Martin
  *
  */

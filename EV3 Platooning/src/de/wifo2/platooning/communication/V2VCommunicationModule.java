@@ -1,10 +1,15 @@
-package robot;
+package de.wifo2.platooning.communication;
+
+import java.net.InetAddress;
 
 import org.jgroups.JChannel;
 import org.jgroups.Message;
 import org.jgroups.Message.Flag;
 import org.jgroups.ReceiverAdapter;
 import org.jgroups.View;
+
+import de.wifo2.platooning.robot.PlatooningVehicle;
+import de.wifo2.platooning.robot.Robot;
 
 /**
  * Module used to multicast messages to all platoon members.
@@ -47,16 +52,19 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	 * @param platoonName
 	 *            The name of the platoon which shall be joined.
 	 */
-	protected V2VCommunicationModule(Robot robot) {
+	public V2VCommunicationModule(Robot robot) {
 
 		// Initialization
 		this.vehicle = robot;
 		server = new V2VServer();
 
-		// The used JGroup configuration file
-		String config = "udp_No" + robot.getName() + ".xml";
 		try {
-			communicationChannel = new JChannel(config);
+			communicationChannel = new JChannel();
+			
+			//bind correct IP address to channel
+			communicationChannel.getProtocolStack().getTransport().setValue("bind_addr", InetAddress.getByName(robot.getIPAsString()));
+			
+			//set receiver
 			communicationChannel.setReceiver(this);
 
 			// Discard own messages
@@ -110,7 +118,7 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	 * @param isOOB
 	 *            True, if the message shall be transmitted out-of-band
 	 */
-	protected void sendMessage(String message, boolean isOOB) {
+	public void sendMessage(String message, boolean isOOB) {
 		hasToSend = true;
 		this.isOOB = isOOB;
 		this.message = message;
@@ -122,7 +130,7 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	 */
 	@Override
 	public void viewAccepted(View new_view) {
-		System.out.println("Node joined, current group view: " + new_view);
+		System.out.println("Group view changed, current group view: " + new_view);
 	}
 
 	/**
@@ -141,7 +149,7 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	/**
 	 * Terminates the current V2V communication and closes the module
 	 */
-	protected void close() {
+	public void close() {
 		System.out.println("V2V module closed.");
 		server.interrupt();
 	}
@@ -153,7 +161,7 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	 * @param groupName
 	 *            The name of the communication group
 	 */
-	protected void joinGroup(String groupName) {
+	public void joinGroup(String groupName) {
 		try {
 			communicationChannel.connect(groupName);
 			System.out.println("Connection with Group established.");
@@ -171,7 +179,7 @@ public class V2VCommunicationModule extends ReceiverAdapter {
 	 * 
 	 * @return The platoon size
 	 */
-	protected int getPlatoonSize() {
+	public int getPlatoonSize() {
 		return communicationChannel.getView().size();
 	}
 

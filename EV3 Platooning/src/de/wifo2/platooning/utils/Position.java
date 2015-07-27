@@ -1,4 +1,4 @@
-package tools;
+package de.wifo2.platooning.utils;
 
 /**
  * Container class which saves the position data of a robot
@@ -37,6 +37,14 @@ public class Position {
 	public Position(int markerNumber, double additionalDistance) {
 		this.markerNumber = markerNumber;
 		this.additionalDistance = additionalDistance;
+	}
+	
+	/** Retrieves the number of position markings which were passed
+	 * 
+	 * @return The number of passed position markings
+	 */
+	public int getMarkerNumber(){
+		return this.markerNumber;
 	}
 
 	/**
@@ -78,6 +86,10 @@ public class Position {
 			return "Marker No. " + markerNumber + " , Distance: "
 					+ additionalDistance;
 		}
+	}
+	
+	public static int marshallPosition(Position position){
+		return (int) ((position.getMarkerNumber() - 1) * 25 + position.getAdditionalDistance());
 	}
 
 }

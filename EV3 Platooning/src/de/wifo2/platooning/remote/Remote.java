@@ -1,12 +1,9 @@
-package remote;
-
-import tools.Commands;
-import tools.Position;
+package de.wifo2.platooning.remote;
 
 /**
  * main class for remote steering. launches a server where all robot connect.
  * creates a UI to control robots
- * 
+ * @deprecated Use the protocol instead
  * @author Martin
  *
  */
@@ -16,9 +13,6 @@ public class Remote {
 	private RemoteServer server = new RemoteServer(this);
 	
 	
-	/** 15 + 0.5 velocity */
-	private int overtakeDistance = 40;
-	private int reenterDistance = 10;
 
 	/** the UI */
 	private RemoteUI ui;
