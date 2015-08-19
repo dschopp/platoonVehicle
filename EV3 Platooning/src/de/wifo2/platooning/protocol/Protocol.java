@@ -89,7 +89,11 @@ public class Protocol {
 		builder.append(Position.marshallPosition(vehicle.getPosition()) + "_");
 
 		// Current highway lane
-		builder.append(vehicle.getHighwayLane());
+		builder.append(vehicle.getHighwayLane() + "_");
+		
+		builder.append(vehicle.getDestination() + "_");
+		
+		builder.append(vehicle.getExit());
 
 		return builder.toString();
 	}
@@ -115,6 +119,8 @@ public class Protocol {
 		int position = 0;
 		int n = 0;
 		int lane = 0;
+		int destination = 0;
+		int exit = 0;
 
 		// split the received message and decode parts of it
 		while (splitString.hasMoreElements()) {
@@ -144,13 +150,19 @@ public class Protocol {
 			case 7:
 				lane = Integer.parseInt(str);
 				break;
+			case 8:
+				destination = Integer.parseInt(str);
+				break;
+			case 9:
+				exit = Integer.parseInt(str);
+				break;
 			default:
 				break;
 			}
 			n++;
 		}
 		return new DecodedData(packageID, dataForm, platoonNumber,
-				vehicleNumber, command, velocity, position, lane);
+				vehicleNumber, command, velocity, position, lane, destination, exit);
 	}
 
 }

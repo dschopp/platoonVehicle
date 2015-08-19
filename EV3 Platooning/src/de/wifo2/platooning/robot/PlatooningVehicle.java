@@ -129,4 +129,10 @@ public interface PlatooningVehicle {
 	 * @return The current highway lane
 	 */
 	public int getHighwayLane();
+
+	public int getDestination();
+
+	public int getExit();
+	
+	public void setExit(int desiredExit);
 }

@@ -71,9 +71,6 @@ public class V2ICommunicationModule {
 					socket.getInputStream()));
 			out = new PrintWriter(socket.getOutputStream(), true);
 
-			// send the robots name to the server
-			out.println(vehicle);
-
 		} catch (NumberFormatException | IOException e) {
 			e.printStackTrace();
 		}
@@ -191,9 +188,9 @@ public class V2ICommunicationModule {
 					// leave a platoon by exiting the highway
 					case Protocol.COMMAND_LEAVE_EXIT:
 						vehicle.setVelocity((int) receivedData.getVelocity());
+						vehicle.setExit((int) receivedData.getExit());
 						hasReceivedVelocity = true;
 						vehicle.exitNextRamp();
-						System.out.println("Exit branch");
 						vehicle.leavePlatoon();
 						break;
 
@@ -243,6 +240,7 @@ public class V2ICommunicationModule {
 
 				// if a message is stored in the queue --> send it
 				if (message != null) {
+					System.out.println("Sent via V2I: " + message);
 					out.println(message);
 				}
 

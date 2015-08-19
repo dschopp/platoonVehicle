@@ -8,7 +8,9 @@ import java.util.Properties;
 import de.wifo2.platooning.communication.V2ICommunicationModule;
 import de.wifo2.platooning.communication.V2VCommunicationModule;
 import de.wifo2.platooning.protocol.Protocol;
+import de.wifo2.platooning.utils.ExitRamp;
 import de.wifo2.platooning.utils.Lane;
+import de.wifo2.platooning.utils.Map;
 import de.wifo2.platooning.utils.Position;
 import lejos.hardware.Button;
 import lejos.hardware.lcd.LCD;
@@ -163,6 +165,12 @@ public class Robot implements PlatooningVehicle {
 	 * infrastructure
 	 */
 	private int dataForm;
+	
+	private int desiredExit = 0;
+	
+	private int destination = 0;
+	
+	private Map map = new Map();
 
 	/**
 	 * Standard constructor of a Lego EV3 platooning robot
@@ -183,14 +191,15 @@ public class Robot implements PlatooningVehicle {
 		calibrateLightSensor();
 
 		// enable communication
-		enableCommunication();
+		enableV2VCommunication();
 
 		// as long as no termination signals were received, the robot continues
 		// following the highway
 		while (!shallTerminate) {
-			if (!v2icommunication.getHasReceivedVelocity()) {
-				currentVelocity = START_VELOCITY;
-			}
+				if (v2icommunication == null || !v2icommunication.getHasReceivedVelocity()) {
+					currentVelocity = START_VELOCITY;
+				}
+			
 			driveOnHighway();
 		}
 		v2icommunication.closeCommunication();
@@ -227,6 +236,7 @@ public class Robot implements PlatooningVehicle {
 			server_port = Integer.parseInt(properties
 					.getProperty("server_port"));
 			robot_ip = properties.getProperty("robot_ip");
+			destination = Integer.parseInt(properties.getProperty("destination"));
 
 		} catch (Exception e) {
 			System.out.println("Error: Not able to read properties file at "
@@ -278,23 +288,15 @@ public class Robot implements PlatooningVehicle {
 	}
 
 	/**
-	 * Initial method to enable V2I and V2V communication
-	 */
-	private void enableCommunication() {
-		System.out.println("Enable V2V communication...");
-		enableV2VCommunication();
-		System.out.println("V2V communication enabled.");
-		System.out.println("Enable V2I communication...");
-		enableV2ICommunication(server_ip, server_port);
-		System.out.println("V2I communication enabled.");
-	}
-
-	/**
-	 * Enable V2V communication
+	 * Initial method to enable V2V communication
 	 */
 	private void enableV2VCommunication() {
+		System.out.println("Enable V2V communication...");
 		v2vcommunication = new V2VCommunicationModule(this);
+		System.out.println("V2V communication enabled.");
+
 	}
+
 
 	/**
 	 * Enable V2I communication
@@ -437,6 +439,11 @@ public class Robot implements PlatooningVehicle {
 					motorLeft.resetTachoCount();
 
 					if (markerCount == 1) {
+						
+						System.out.println("Enable V2I communication...");
+						enableV2ICommunication(server_ip, server_port);
+						System.out.println("V2I communication enabled.");
+						
 						dataForm = Protocol.FORM_DATA;
 						command = Protocol.COMMAND_CHECKIN;
 						v2icommunication.sendMessage();
@@ -454,50 +461,65 @@ public class Robot implements PlatooningVehicle {
 						command = Protocol.COMMAND_CHECKOUT;
 						v2icommunication.sendMessage();
 					}
+					
+					for(ExitRamp exit: map.getExitRamps()){
+					if (Position.marshallPosition(currentPosition) >= exit.getStart() && Position.marshallPosition(currentPosition) < exit.getEnd()) {
+						if (shallExit) {
+							// send a leaving message to platoon
+							if (isInPlatoon) {
+								v2vcommunication.sendMessage(getVehicleNumber()
+										+ ": I exit the highway now", false);
+							}
+
+							// adjust line following mode (to the color of the
+							// exit
+							// ramp)
+							lineFollowingMode = LineFollowingMode.EXIT;
+							isLead = true;
+							isInPlatoon = false;
+							
+							// as long as no blue marking is detected: follow the exit ramp
+							while (currentColor != Color.RED) {
+								if (hasTwoColorSensors) {
+									colorMode.fetchSample(colorSample, 0);
+									currentColor = (int) colorSample[0];
+								}
+								followLine(redMode, redSample);
+
+							}
+							shallExit = false;
+						} else {
+							lineFollowingMode = LineFollowingMode.DONT_EXIT;
+
+						}
+					}
+				}
+					
 					dataForm = Protocol.FORM_DATA;
 					command = Protocol.COMMAND_DATA;
 					v2icommunication.sendMessage();
 				}
+				
+				
 
 				// if no marking was detected: follow the highway as regular
 			case Color.NONE:
 			case Color.BLACK:
-				lineFollowingMode = LineFollowingMode.REGULAR;
+				boolean isInExitRamp = false;
+				for(ExitRamp exit: map.getExitRamps()){
+					
+				if (Position.marshallPosition(currentPosition) >= exit.getStart() && Position.marshallPosition(currentPosition) < exit.getEnd()) {
+					isInExitRamp = true;
+					break;
+				}
+				}
+				if(!isInExitRamp){
+					lineFollowingMode = LineFollowingMode.REGULAR;
+				}
 				followLine(redMode, redSample);
 				break;
 
-			// if a red marking was detected and if the robot shall exit the
-			// next ramp: start exiting highway
-			case Color.RED:
-				if (shallExit) {
-
-					// send a leaving message to platoon
-					if (isInPlatoon) {
-						v2vcommunication.sendMessage(getVehicleNumber()
-								+ ": I exit the highway now", false);
-					}
-
-					// adjust line following mode (to the color of the exit
-					// ramp)
-					lineFollowingMode = LineFollowingMode.EXIT;
-					isLead = true;
-					isInPlatoon = false;
-				} else {
-					lineFollowingMode = LineFollowingMode.DONT_EXIT;
-
-				}
-
-				// as long as no blue marking is detected: follow the exit ramp
-				while (currentColor != Color.BLUE) {
-					if (hasTwoColorSensors) {
-						colorMode.fetchSample(colorSample, 0);
-						currentColor = (int) colorSample[0];
-					}
-					followLine(redMode, redSample);
-
-				}
-				shallExit = false;
-				break;
+	
 			}
 			// refresh current position
 			setPosition(markerCount, ((double) motorLeft.getTachoCount())
@@ -752,11 +774,22 @@ public class Robot implements PlatooningVehicle {
 	 * @return The lateral correction needed to follow a line in the optimal way
 	 */
 	public float calculateLateralCorrection(float value, float midpoint) {
-
+		
 		// PID Controller based on the parameters Kp, Ki, and Kd
-		float currentKp = kp;
-		float currentKi = ki;
-		float currentKd = kd;
+		float currentKp = 0;
+		float currentKi = 0;
+		float currentKd = 0;
+		
+		if(lineFollowingMode == LineFollowingMode.DONT_EXIT){
+			currentKp = 1F;
+		}
+		else{
+			currentKp = kp;
+			currentKi = ki;
+			currentKd = kd;
+		}
+		
+
 		if (currentVelocity > 50) {
 			currentKp = 2F;
 			currentKi = 0;
@@ -938,6 +971,21 @@ public class Robot implements PlatooningVehicle {
 	@Override
 	public int getHighwayLane() {
 		return currentLane.getValue();
+	}
+
+	@Override
+	public int getDestination() {
+		return destination;
+	}
+
+	@Override
+	public int getExit() {
+		return desiredExit;
+	}
+	
+	@Override
+	public void setExit(int desiredExit){
+		this.desiredExit = desiredExit;
 	}
 
 }
