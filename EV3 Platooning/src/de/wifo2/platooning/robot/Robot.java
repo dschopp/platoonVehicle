@@ -171,6 +171,8 @@ public class Robot implements PlatooningVehicle {
 	private int destination = 0;
 	
 	private Map map = new Map();
+	
+	private boolean v2vCommunicationEnabled = true;
 
 	/**
 	 * Standard constructor of a Lego EV3 platooning robot
@@ -191,7 +193,9 @@ public class Robot implements PlatooningVehicle {
 		calibrateLightSensor();
 
 		// enable communication
-		enableV2VCommunication();
+		if(v2vCommunicationEnabled){
+			enableV2VCommunication();
+		}
 
 		// as long as no termination signals were received, the robot continues
 		// following the highway
@@ -237,6 +241,7 @@ public class Robot implements PlatooningVehicle {
 					.getProperty("server_port"));
 			robot_ip = properties.getProperty("robot_ip");
 			destination = Integer.parseInt(properties.getProperty("destination"));
+			v2vCommunicationEnabled = Boolean.parseBoolean(properties.getProperty("v2vCommunicationEnabled"));
 
 		} catch (Exception e) {
 			System.out.println("Error: Not able to read properties file at "
@@ -409,7 +414,7 @@ public class Robot implements PlatooningVehicle {
 					System.out.println("Obstacle detected --> brake");
 					currentVelocity = 0;
 
-					if (isInPlatoon) {
+					if (isInPlatoon && v2vCommunicationEnabled) {
 						System.out.println("inPlatoon --> send EMERGENCY");
 						// send emergency notification
 						if (!emergencyNotificationSent) {
@@ -466,7 +471,7 @@ public class Robot implements PlatooningVehicle {
 					if (Position.marshallPosition(currentPosition) >= exit.getStart() && Position.marshallPosition(currentPosition) < exit.getEnd()) {
 						if (shallExit) {
 							// send a leaving message to platoon
-							if (isInPlatoon) {
+							if (isInPlatoon && v2vCommunicationEnabled) {
 								v2vcommunication.sendMessage(getVehicleNumber()
 										+ ": I exit the highway now", false);
 							}
@@ -539,7 +544,7 @@ public class Robot implements PlatooningVehicle {
 	private void changeLine() {
 
 		// send a message via V2V communication if in platoon
-		if (isInPlatoon) {
+		if (isInPlatoon && v2vCommunicationEnabled) {
 			v2vcommunication.sendMessage(
 					getVehicleNumber() + ": I change line", false);
 		}
@@ -695,7 +700,7 @@ public class Robot implements PlatooningVehicle {
 		// reset attribute and send message to platoon that line changing was
 		// finished
 		shallChangeLine = false;
-		if (isInPlatoon) {
+		if (isInPlatoon && v2vCommunicationEnabled) {
 			v2vcommunication.sendMessage(getVehicleNumber()
 					+ ": I finished changing lines", false);
 		}
@@ -866,18 +871,20 @@ public class Robot implements PlatooningVehicle {
 	public void joinPlatoon(int platoonNumber, boolean isLead) {
 		this.isLead = isLead;
 		System.out.println("isLead = " + isLead);
-		v2vcommunication.joinGroup(Integer.toString(platoonNumber));
-		System.out.println("Joined V2V communication of platoon "
-				+ platoonNumber);
-		v2vcommunication.sendMessage(getVehicleNumber() + ": Hello, I'm new!",
-				false);
+		if (v2vCommunicationEnabled) {
+			v2vcommunication.joinGroup(Integer.toString(platoonNumber));
+			System.out.println("Joined V2V communication of platoon "
+					+ platoonNumber);
+			v2vcommunication.sendMessage(getVehicleNumber()
+					+ ": Hello, I'm new!", false);
+		}
 		isInPlatoon = true;
 		this.platoonNumber = platoonNumber;
 	}
 
 	@Override
 	public void leavePlatoon() {
-		if (isInPlatoon) {
+		if (isInPlatoon && v2vCommunicationEnabled) {
 			v2vcommunication.sendMessage(getVehicleNumber()
 					+ ": I leave the platoon", false);
 			System.out.println("Left the platoon.");
@@ -893,7 +900,7 @@ public class Robot implements PlatooningVehicle {
 
 	@Override
 	public void stopDriving() {
-		if (isInPlatoon) {
+		if (isInPlatoon && v2vCommunicationEnabled) {
 			v2vcommunication.sendMessage(getVehicleNumber()
 					+ ": I have to stop", false);
 		}
@@ -906,7 +913,7 @@ public class Robot implements PlatooningVehicle {
 
 	@Override
 	public void exitNextRamp() {
-		if (isInPlatoon) {
+		if (isInPlatoon && v2vCommunicationEnabled) {
 			v2vcommunication.sendMessage(getVehicleNumber()
 					+ ": I will exit next ramp", false);
 		}
