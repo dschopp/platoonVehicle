@@ -147,7 +147,6 @@ public class V2ICommunicationModule {
 		public void run() {
 			System.out.println("V2I communication ready to receive");
 			String message;
-			boolean isLead = false;
 
 			// as long as the communication module is running
 			while (!this.isInterrupted()) {
@@ -167,10 +166,10 @@ public class V2ICommunicationModule {
 					case Protocol.COMMAND_CREATE:
 						vehicle.setVelocity((int) receivedData.getVelocity());
 						hasReceivedVelocity = true;
-						isLead = true;
+						vehicle.setLead(receivedData.getLead());
 						if (receivedData.getPlatoonNumber() != 0) {
 							vehicle.joinPlatoon(
-									receivedData.getPlatoonNumber(), isLead);
+									receivedData.getPlatoonNumber(), vehicle.getLead());
 						}
 						break;
 
@@ -178,10 +177,10 @@ public class V2ICommunicationModule {
 					case Protocol.COMMAND_JOIN:
 						vehicle.setVelocity((int) receivedData.getVelocity());
 						hasReceivedVelocity = true;
-						isLead = false;
+						vehicle.setLead(receivedData.getLead());
 						if (receivedData.getPlatoonNumber() != 0) {
 							vehicle.joinPlatoon(
-									receivedData.getPlatoonNumber(), isLead);
+									receivedData.getPlatoonNumber(), vehicle.getLead());
 						}
 						break;
 

@@ -93,7 +93,9 @@ public class Protocol {
 		
 		builder.append(vehicle.getDestination() + "_");
 		
-		builder.append(vehicle.getExit());
+		builder.append(vehicle.getExit() + "_");
+		
+		builder.append(vehicle.getLane());
 
 		return builder.toString();
 	}
@@ -121,6 +123,7 @@ public class Protocol {
 		int lane = 0;
 		int destination = 0;
 		int exit = 0;
+		boolean isLead = false;
 
 		// split the received message and decode parts of it
 		while (splitString.hasMoreElements()) {
@@ -156,13 +159,15 @@ public class Protocol {
 			case 9:
 				exit = Integer.parseInt(str);
 				break;
+			case 10:
+				isLead = Boolean.parseBoolean(str);
 			default:
 				break;
 			}
 			n++;
 		}
 		return new DecodedData(packageID, dataForm, platoonNumber,
-				vehicleNumber, command, velocity, position, lane, destination, exit);
+				vehicleNumber, command, velocity, position, lane, destination, exit, isLead);
 	}
 
 }

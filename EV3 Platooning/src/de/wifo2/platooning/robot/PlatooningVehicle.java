@@ -133,6 +133,12 @@ public interface PlatooningVehicle {
 	public int getDestination();
 
 	public int getExit();
+
+	public boolean getLane();
+	
+	public boolean getLead();
+	
+	public void setLead(boolean isLead);
 	
 	public void setExit(int desiredExit);
 }

@@ -362,6 +362,12 @@ public class Robot implements PlatooningVehicle {
 		colorTestMode.fetchSample(colorSample, 0);
 		exitColor = colorSample[0];
 		LCD.clear();
+		try {
+			Thread.sleep(1000);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		System.out.println("Sensors calibrated");
 
 	}
@@ -993,6 +999,23 @@ public class Robot implements PlatooningVehicle {
 	@Override
 	public void setExit(int desiredExit){
 		this.desiredExit = desiredExit;
+	}
+
+	@Override
+	public boolean getLane() {
+		return isLead;
+	}
+
+	@Override
+	public boolean getLead() {
+		// TODO Auto-generated method stub
+		return isLead;
+	}
+
+	@Override
+	public void setLead(boolean isLead) {
+		this.isLead = isLead;
+		
 	}
 
 }

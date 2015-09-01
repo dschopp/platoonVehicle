@@ -18,6 +18,7 @@ public class DecodedData {
 	private int lane;
 	private int destination;
 	private int exit;
+	private boolean isLead;
 	
 	/**
 	 * Basic constructor.
@@ -31,7 +32,7 @@ public class DecodedData {
 	 * @param lane
 	 */
 	public DecodedData(int packageID, int dataForm, int platoonNumber,
-			int vehicleNumber, int command, float velocity, int position, int lane, int destination, int exit) {
+			int vehicleNumber, int command, float velocity, int position, int lane, int destination, int exit, boolean isLead) {
 		this.packageID = packageID;
 		this.dataForm = dataForm;
 		this.platoonNumber = platoonNumber;
@@ -42,6 +43,7 @@ public class DecodedData {
 		this.lane = lane;
 		this.destination = destination;
 		this.exit = exit;
+		this.isLead = isLead;
 	}
 
 	
@@ -128,6 +130,16 @@ public class DecodedData {
 
 	public void setExit(int exit) {
 		this.exit = exit;
+	}
+
+
+	public boolean getLead() {
+		return isLead;
+	}
+
+
+	public void setLead(boolean isLead) {
+		this.isLead = isLead;
 	}
 
 
