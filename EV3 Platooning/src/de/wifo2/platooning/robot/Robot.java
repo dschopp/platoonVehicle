@@ -500,7 +500,13 @@ public class Robot implements PlatooningVehicle {
 							}
 							shallExit = false;
 						} else {
-							lineFollowingMode = LineFollowingMode.DONT_EXIT;
+							
+							//if the robot is currently using the right highway lane
+							if(currentLane == Lane.RIGHT){
+								
+								//change line following mode because of the exit ramp
+								lineFollowingMode = LineFollowingMode.DONT_EXIT;
+							}
 
 						}
 					}
@@ -524,7 +530,11 @@ public class Robot implements PlatooningVehicle {
 					break;
 				}
 				}
-				if(!isInExitRamp){
+				
+				// change the line following mode to regular mode if the robot
+				// is using the left highway lane or if he is not currently
+				// passing an exit ramp
+				if ((!isInExitRamp) || (currentLane == Lane.OVERTAKING)) {
 					lineFollowingMode = LineFollowingMode.REGULAR;
 				}
 				followLine(redMode, redSample);
